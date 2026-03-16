@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# boardroom
+/dist/
+/worktrees/
+*.db
+*.db-wal
+*.db-shm
+
+# electron build artifacts
+/electron/icon.icns
+
+# test/scratch files
+*.html
+hello.txt
+test-agent.mjs
+game-recommendation.md
+/br/
