@@ -12,6 +12,9 @@ interface WorkflowStep {
   dependsOn?: string[];
   parallel?: boolean;
   position?: { x: number; y: number };
+  stepType?: 'standard' | 'evaluator' | 'router';
+  maxRetries?: number;
+  routes?: string[];
 }
 
 interface CanvasProps {
@@ -870,6 +873,16 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                     <span className="text-[9px] px-1.5 py-0.5 rounded border border-zinc-700 text-zinc-500 bg-zinc-800/40">
                       {step.model || 'sonnet'}
                     </span>
+                    {step.stepType === 'evaluator' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded border border-amber-700/50 text-amber-400 bg-amber-500/10">
+                        eval {step.maxRetries ? `x${step.maxRetries}` : 'x3'}
+                      </span>
+                    )}
+                    {step.stepType === 'router' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-700/50 text-purple-400 bg-purple-500/10">
+                        router
+                      </span>
+                    )}
                     {runStatus && (
                       <span className={`text-[9px] px-1.5 py-0.5 rounded ml-auto ${
                         runStatus.status === 'done' ? 'bg-emerald-500/15 text-emerald-400'
@@ -1182,6 +1195,75 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                 <span className="text-[10px] text-zinc-700">no other steps to depend on</span>
               )}
             </div>
+          </div>
+
+          {/* Step behavior */}
+          <div className="mt-3 pt-3 border-t border-zinc-800/60">
+            <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5 block">behavior</label>
+            <div className="flex items-center gap-1.5 mb-2">
+              {(['standard', 'evaluator', 'router'] as const).map(st => (
+                <button
+                  key={st}
+                  onClick={() => updateStep(selectedIdx, 'stepType', st === 'standard' ? undefined : st)}
+                  className={`text-[10px] px-2.5 py-1 rounded-md border transition-all ${
+                    (selectedStep.stepType || 'standard') === st
+                      ? st === 'evaluator' ? 'bg-amber-500/10 border-amber-700/50 text-amber-400'
+                        : st === 'router' ? 'bg-purple-500/10 border-purple-700/50 text-purple-400'
+                        : 'bg-zinc-800 border-zinc-600 text-zinc-300'
+                      : 'border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+
+            {/* Evaluator: maxRetries */}
+            {selectedStep.stepType === 'evaluator' && (
+              <div className="mt-2">
+                <label className="text-[10px] text-zinc-600 mb-1 block">max retries (how many times to re-run the dependency)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={selectedStep.maxRetries ?? 3}
+                  onChange={(e) => updateStep(selectedIdx, 'maxRetries', Math.max(1, Math.min(10, parseInt(e.target.value) || 3)))}
+                  className="w-20 h-7 px-2 text-xs bg-zinc-950/60 border border-zinc-800 rounded-md text-zinc-200 font-mono focus:outline-none focus:ring-1 focus:ring-amber-700"
+                />
+                <p className="text-[9px] text-zinc-700 mt-1">this step evaluates its dependency&apos;s output. if it outputs FAIL/BLOCKED/NEEDS CHANGES, the dependency is re-run with feedback.</p>
+              </div>
+            )}
+
+            {/* Router: routes */}
+            {selectedStep.stepType === 'router' && (
+              <div className="mt-2">
+                <label className="text-[10px] text-zinc-600 mb-1 block">route targets (step names this router can send to)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {steps.map((s, i) => {
+                    if (i === selectedIdx) return null;
+                    const routes = selectedStep.routes || [];
+                    const isRoute = routes.includes(s.name);
+                    return (
+                      <label key={i} className="flex items-center gap-1.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={isRoute}
+                          onChange={(e) => {
+                            const newRoutes = e.target.checked
+                              ? [...routes, s.name]
+                              : routes.filter(r => r !== s.name);
+                            updateStep(selectedIdx, 'routes', newRoutes.length > 0 ? newRoutes : undefined);
+                          }}
+                          className="w-3 h-3 rounded border-zinc-700 bg-zinc-900 text-purple-500 focus:ring-0 focus:ring-offset-0"
+                        />
+                        <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 transition-colors">{s.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[9px] text-zinc-700 mt-1">this step classifies its input and picks one route. include the target step names in its task so it knows the options. unselected routes are skipped.</p>
+              </div>
+            )}
           </div>
         </div>
       )}

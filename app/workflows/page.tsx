@@ -22,6 +22,9 @@ interface WorkflowStep {
   task: string;
   dependsOn?: string[];
   parallel?: boolean;
+  stepType?: 'standard' | 'evaluator' | 'router';
+  maxRetries?: number;
+  routes?: string[];
 }
 
 interface WorkflowDef {
