@@ -8,7 +8,7 @@ export async function GET() {
   return NextResponse.json({
     runs: runs.map((r: any) => ({
       ...r,
-      agent_ids: r.agent_ids_json ? JSON.parse(r.agent_ids_json) : [],
+      agent_ids: r.agent_ids_json ? (() => { try { return JSON.parse(r.agent_ids_json); } catch { return []; } })() : [],
     })),
   });
 }

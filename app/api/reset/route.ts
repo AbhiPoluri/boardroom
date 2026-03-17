@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { killAgent } from '@/lib/spawner';
 import { getAllAgents } from '@/lib/db';
 import { removeWorktree } from '@/lib/worktree';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +31,7 @@ export async function POST() {
     for (const agent of agents) {
       if (agent.worktree_path) {
         try {
-          const lsofOutput = execSync(`lsof +D "${agent.worktree_path}" -t 2>/dev/null || true`, { stdio: 'pipe' }).toString().trim();
+          const lsofOutput = execFileSync('lsof', ['+D', agent.worktree_path, '-t'], { stdio: 'pipe' }).toString().trim();
           if (lsofOutput) {
             for (const pidStr of lsofOutput.split('\n')) {
               const pid = parseInt(pidStr, 10);

@@ -10,7 +10,7 @@ export async function GET() {
   const messages = rows.map(r => ({
     role: r.role,
     content: r.content,
-    events: r.events_json ? JSON.parse(r.events_json) : [],
+    events: r.events_json ? (() => { try { return JSON.parse(r.events_json); } catch { return []; } })() : [],
   }));
   return Response.json({ messages });
 }

@@ -210,12 +210,20 @@ export function createAgent(agent: Omit<Agent, 'updated_at'>): void {
   `).run({ ...agent, updated_at: now });
 }
 
+const ALLOWED_AGENT_COLUMNS = new Set([
+  'name', 'type', 'status', 'task', 'repo', 'worktree_path',
+  'pid', 'port', 'created_at', 'depends_on',
+]);
+
 export function updateAgent(id: string, updates: Partial<Agent>): void {
   const db = getDb();
   const now = Date.now();
-  const fields = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
+  const safeKeys = Object.keys(updates).filter(k => ALLOWED_AGENT_COLUMNS.has(k));
+  if (safeKeys.length === 0) return;
+  const fields = safeKeys.map(k => `${k} = @${k}`).join(', ');
+  const safeUpdates = Object.fromEntries(safeKeys.map(k => [k, (updates as Record<string, unknown>)[k]]));
   db.prepare(`UPDATE agents SET ${fields}, updated_at = @updated_at WHERE id = @id`)
-    .run({ ...updates, updated_at: now, id });
+    .run({ ...safeUpdates, updated_at: now, id });
 }
 
 export function updateAgentStatus(id: string, status: AgentStatus, pid?: number): void {

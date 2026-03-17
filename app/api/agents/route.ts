@@ -85,8 +85,12 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'path is required' }, { status: 400 });
     }
 
-    // Resolve and validate the path
+    // Resolve and validate the path — prevent directory traversal
     const resolved = path.resolve(dirPath);
+    const homeDir = require('os').homedir();
+    if (!resolved.startsWith(homeDir) && !resolved.startsWith('/tmp')) {
+      return NextResponse.json({ error: `Path must be under home directory or /tmp` }, { status: 400 });
+    }
     if (!fs.existsSync(resolved)) {
       return NextResponse.json({ error: `Path does not exist: ${resolved}` }, { status: 400 });
     }
@@ -99,10 +103,10 @@ export async function PUT(req: NextRequest) {
     let isGitRepo = false;
     let gitBranch: string | null = null;
     try {
-      const { execSync } = require('child_process');
-      execSync(`git -C "${resolved}" rev-parse --git-dir`, { stdio: 'pipe' });
+      const { execFileSync } = require('child_process');
+      execFileSync('git', ['-C', resolved, 'rev-parse', '--git-dir'], { stdio: 'pipe' });
       isGitRepo = true;
-      gitBranch = execSync(`git -C "${resolved}" rev-parse --abbrev-ref HEAD`, { stdio: 'pipe', encoding: 'utf-8' }).trim();
+      gitBranch = execFileSync('git', ['-C', resolved, 'rev-parse', '--abbrev-ref', 'HEAD'], { stdio: 'pipe', encoding: 'utf-8' }).trim();
     } catch {}
 
     const id = uuidv4();

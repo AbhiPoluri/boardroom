@@ -65,9 +65,6 @@ export default function Dashboard() {
     return {};
   });
 
-  // Chat panel state
-
-
   const fetchAgents = useCallback(async () => {
     try {
       const res = await fetch('/api/agents');

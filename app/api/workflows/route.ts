@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
   }
 
   const workflows = getAllWorkflows();
-  return NextResponse.json({ workflows: workflows.map((w: any) => ({ ...w, steps: JSON.parse(w.steps_json) })) });
+  return NextResponse.json({ workflows: workflows.map((w: any) => {
+    let steps: unknown[] = [];
+    try { steps = JSON.parse(w.steps_json); } catch { steps = []; }
+    return { ...w, steps };
+  }) });
 }
 
 export async function POST(req: NextRequest) {
