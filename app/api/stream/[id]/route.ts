@@ -34,7 +34,8 @@ export async function GET(
         controller.enqueue(encoder.encode(data));
       }
 
-      // Poll for new logs every 500ms
+      // Poll for new logs every 1s (was 500ms)
+      let doneChecks = 0;
       const interval = setInterval(() => {
         try {
           const newLogs = getLogsSince(id, lastId);
@@ -46,11 +47,18 @@ export async function GET(
             }
           }
 
-          // Check if agent is done/killed/error - send terminal status
+          // Check if agent is done/killed/error - send terminal status and stop polling
           const currentAgent = getAgentById(id);
           if (currentAgent && ['done', 'killed', 'error'].includes(currentAgent.status)) {
             const data = `data: ${JSON.stringify({ type: 'status', status: currentAgent.status })}\n\n`;
             controller.enqueue(encoder.encode(data));
+            // After agent finishes, check a few more times for trailing logs then stop
+            doneChecks++;
+            if (doneChecks >= 5) {
+              clearInterval(interval);
+              clearInterval(heartbeat);
+              try { controller.close(); } catch {}
+            }
           }
         } catch {
           clearInterval(interval);
@@ -60,7 +68,7 @@ export async function GET(
             // already closed
           }
         }
-      }, 500);
+      }, 1000);
 
       // Heartbeat every 30s to keep connection alive
       const heartbeat = setInterval(() => {

@@ -11,6 +11,38 @@ export interface WorktreeResult {
   error?: string;
 }
 
+export interface GitInfo {
+  isGit: boolean;
+  branch?: string;
+  baseBranch?: string;
+  aheadBy?: number;
+  changedFiles?: ChangedFile[];
+  diff?: string;
+  recentCommits?: CommitInfo[];
+}
+
+export interface ChangedFile {
+  path: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed';
+  additions?: number;
+  deletions?: number;
+}
+
+export interface CommitInfo {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+function git(cwd: string, cmd: string): string {
+  return execSync(`git -C "${cwd}" ${cmd}`, { stdio: 'pipe', encoding: 'utf-8' }).trim();
+}
+
+function gitSafe(cwd: string, cmd: string): string | null {
+  try { return git(cwd, cmd); } catch { return null; }
+}
+
 export function ensureWorktreesDir(): void {
   if (!fs.existsSync(WORKTREES_DIR)) {
     fs.mkdirSync(WORKTREES_DIR, { recursive: true });
@@ -22,13 +54,11 @@ export async function createWorktree(agentId: string, repo?: string): Promise<Wo
 
   const worktreePath = path.join(WORKTREES_DIR, agentId);
 
-  // No repo — use a persistent dir under worktrees/
   if (!repo) {
     fs.mkdirSync(worktreePath, { recursive: true });
     return { path: worktreePath, created: true };
   }
 
-  // Check if repo is a valid git repo
   try {
     execSync(`git -C "${repo}" rev-parse --git-dir`, { stdio: 'pipe' });
   } catch {
@@ -36,7 +66,6 @@ export async function createWorktree(agentId: string, repo?: string): Promise<Wo
     return { path: worktreePath, created: true, error: `Repo ${repo} is not a git repo, using worktrees dir` };
   }
 
-  // Create git worktree
   try {
     execSync(
       `git -C "${repo}" worktree add "${worktreePath}" -b "boardroom/${agentId}"`,
@@ -44,7 +73,6 @@ export async function createWorktree(agentId: string, repo?: string): Promise<Wo
     );
     return { path: worktreePath, created: true };
   } catch (err) {
-    // Worktree creation failed — still use the worktrees dir
     fs.mkdirSync(worktreePath, { recursive: true });
     const error = err instanceof Error ? err.message : String(err);
     return { path: worktreePath, created: true, error: `Worktree creation failed: ${error}` };
@@ -68,10 +96,171 @@ export async function removeWorktree(agentId: string, repo?: string): Promise<vo
     } catch {}
   }
 
-  // Clean up git branch
   if (repo) {
     try {
       execSync(`git -C "${repo}" branch -D "boardroom/${agentId}"`, { stdio: 'pipe' });
     } catch {}
   }
+}
+
+/** Get git info for an agent's worktree */
+export function getWorktreeGitInfo(worktreePath: string, repo?: string): GitInfo {
+  if (!worktreePath || !fs.existsSync(worktreePath)) return { isGit: false };
+
+  // Check if it's a git worktree/repo
+  const gitDir = gitSafe(worktreePath, 'rev-parse --git-dir');
+  if (!gitDir) return { isGit: false };
+
+  const branch = gitSafe(worktreePath, 'rev-parse --abbrev-ref HEAD') || undefined;
+
+  // Find the base branch (what the worktree was created from)
+  let baseBranch: string | undefined;
+  if (repo) {
+    // Try common base branches
+    for (const candidate of ['main', 'master', 'develop']) {
+      if (gitSafe(worktreePath, `rev-parse --verify ${candidate} 2>/dev/null`)) {
+        baseBranch = candidate;
+        break;
+      }
+    }
+  }
+
+  // Commits ahead of base
+  let aheadBy: number | undefined;
+  if (baseBranch && branch) {
+    const countStr = gitSafe(worktreePath, `rev-list --count ${baseBranch}..${branch}`);
+    if (countStr) aheadBy = parseInt(countStr, 10);
+  }
+
+  // Changed files (staged + unstaged + untracked)
+  const changedFiles: ChangedFile[] = [];
+
+  // Diff vs base branch (if we have commits ahead)
+  if (baseBranch && aheadBy && aheadBy > 0) {
+    const numstat = gitSafe(worktreePath, `diff --numstat ${baseBranch}...${branch}`);
+    if (numstat) {
+      for (const line of numstat.split('\n')) {
+        if (!line.trim()) continue;
+        const [add, del, filePath] = line.split('\t');
+        changedFiles.push({
+          path: filePath,
+          status: 'modified',
+          additions: add === '-' ? undefined : parseInt(add, 10),
+          deletions: del === '-' ? undefined : parseInt(del, 10),
+        });
+      }
+    }
+  }
+
+  // Working directory changes (uncommitted)
+  const statusOut = gitSafe(worktreePath, 'status --porcelain');
+  if (statusOut) {
+    for (const line of statusOut.split('\n')) {
+      if (!line.trim()) continue;
+      const code = line.substring(0, 2);
+      const filePath = line.substring(3).trim();
+      if (!filePath) continue;
+      // Skip files already in changedFiles from commit diff
+      if (changedFiles.some(f => f.path === filePath)) continue;
+      let status: ChangedFile['status'] = 'modified';
+      if (code === '??' || code === 'A') status = 'added';
+      else if (code === 'D') status = 'deleted';
+      else if (code.startsWith('R')) status = 'renamed';
+      changedFiles.push({ path: filePath, status });
+    }
+  }
+
+  // Recent commits on this branch (since base or last 10)
+  const recentCommits: CommitInfo[] = [];
+  const logRange = baseBranch ? `${baseBranch}..${branch}` : '-10';
+  const logOut = gitSafe(worktreePath, `log ${logRange} --format="%H|%s|%an|%ci" --no-merges`);
+  if (logOut) {
+    for (const line of logOut.split('\n')) {
+      if (!line.trim()) continue;
+      const [hash, message, author, date] = line.split('|');
+      recentCommits.push({
+        hash: hash?.slice(0, 8) || '',
+        message: message || '',
+        author: author || '',
+        date: date || '',
+      });
+    }
+  }
+
+  return {
+    isGit: true,
+    branch,
+    baseBranch,
+    aheadBy,
+    changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
+    recentCommits: recentCommits.length > 0 ? recentCommits : undefined,
+  };
+}
+
+/** Get the full diff for an agent's worktree */
+export function getWorktreeDiff(worktreePath: string, baseBranch?: string): string | null {
+  if (!worktreePath || !fs.existsSync(worktreePath)) return null;
+  const gitDir = gitSafe(worktreePath, 'rev-parse --git-dir');
+  if (!gitDir) return null;
+
+  const branch = gitSafe(worktreePath, 'rev-parse --abbrev-ref HEAD');
+  if (!branch) return null;
+
+  // Committed changes vs base
+  let diff = '';
+  if (baseBranch) {
+    diff = gitSafe(worktreePath, `diff ${baseBranch}...${branch}`) || '';
+  }
+
+  // Uncommitted changes
+  const wdDiff = gitSafe(worktreePath, 'diff') || '';
+  const stagedDiff = gitSafe(worktreePath, 'diff --cached') || '';
+
+  return [diff, stagedDiff, wdDiff].filter(Boolean).join('\n') || null;
+}
+
+/** Merge agent branch back into base branch */
+export function mergeWorktreeBranch(
+  repo: string,
+  agentBranch: string,
+  baseBranch = 'main'
+): { success: boolean; message: string } {
+  try {
+    // Ensure we're on the base branch in the main repo
+    git(repo, `checkout ${baseBranch}`);
+    git(repo, `merge ${agentBranch} --no-ff -m "Merge ${agentBranch} into ${baseBranch}"`);
+    return { success: true, message: `Merged ${agentBranch} into ${baseBranch}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Abort the merge if it failed
+    gitSafe(repo, 'merge --abort');
+    return { success: false, message: `Merge failed: ${msg}` };
+  }
+}
+
+/** Cherry-pick specific commits from agent branch */
+export function cherryPickCommits(
+  repo: string,
+  commits: string[],
+  baseBranch = 'main'
+): { success: boolean; message: string } {
+  try {
+    git(repo, `checkout ${baseBranch}`);
+    for (const hash of commits) {
+      git(repo, `cherry-pick ${hash}`);
+    }
+    return { success: true, message: `Cherry-picked ${commits.length} commit(s) onto ${baseBranch}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    gitSafe(repo, 'cherry-pick --abort');
+    return { success: false, message: `Cherry-pick failed: ${msg}` };
+  }
+}
+
+/** Create a patch file from agent's changes */
+export function createPatch(worktreePath: string, baseBranch?: string): string | null {
+  if (!worktreePath || !fs.existsSync(worktreePath)) return null;
+  const branch = gitSafe(worktreePath, 'rev-parse --abbrev-ref HEAD');
+  if (!branch || !baseBranch) return null;
+  return gitSafe(worktreePath, `format-patch ${baseBranch}..${branch} --stdout`);
 }

@@ -4,7 +4,7 @@
  * No user intervention required.
  */
 
-import { getAllAgents, getLogsForAgent, insertLog } from './db';
+import { getAllAgents, getLogsForAgent, insertLog, cleanupOldPtyChunks } from './db';
 import { sendToAgent, isRunning } from './spawner';
 import { runClaudeCLI } from './orchestrator';
 import type { Agent } from '@/types';
@@ -55,7 +55,15 @@ export function startMonitor(): void {
   }, 5000);
 }
 
+let cleanupCounter = 0;
+
 async function tick(): Promise<void> {
+  // Run DB cleanup every ~5 ticks (~60s)
+  cleanupCounter++;
+  if (cleanupCounter % 5 === 0) {
+    try { cleanupOldPtyChunks(); } catch {}
+  }
+
   const agents = getAllAgents();
   const active = agents.filter(a => a.status === 'running' || a.status === 'spawning');
 

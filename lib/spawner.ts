@@ -1,8 +1,10 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as pty from 'node-pty';
 import { createWorktree, removeWorktree } from './worktree';
-import { insertLog, updateAgentStatus, updateAgent, getAgentById, insertPtyChunk, clearPtyChunks, recordTokenUsage, getLogsForAgent } from './db';
+import { insertLog, updateAgentStatus, updateAgent, getAgentById, insertPtyChunk, clearPtyChunks, recordTokenUsage, getLogsForAgent, getPtyChunks } from './db';
 import { stripAnsi, isTuiChrome } from './strip-tui';
+import { notifyAgentComplete } from './notifications';
+import { generateAgentSummary } from './agent-summary';
 import type { AgentType } from '@/types';
 
 // Processes: either node-pty IPty or standard ChildProcess
@@ -120,16 +122,27 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     const STARTUP_GRACE_MS = 20000;  // ignore idle during first 20s
     const IDLE_TIMEOUT_MS = 15000;   // 15s of no output = done
 
+    // Line buffer: PTY data arrives in arbitrary chunks, so a line may be
+    // split across multiple onData calls. Buffer incomplete lines and only
+    // flush when we see a newline. This prevents word merging.
+    let lineBuffer = '';
+
     // Store raw PTY output as base64 chunks
     ptyProc.onData((data: string) => {
       // Store raw bytes for xterm.js rendering
       insertPtyChunk(agentId, Buffer.from(data).toString('base64'));
       // Extract plain text for orchestrator context (strip ANSI + TUI chrome)
       const plain = stripAnsi(data);
-      const lines = plain.split(/\n/);
-      for (const line of lines) {
+      lineBuffer += plain;
+
+      // Process all complete lines (those ending with \n)
+      const parts = lineBuffer.split('\n');
+      // Last element is the incomplete line — keep it in the buffer
+      lineBuffer = parts.pop() || '';
+
+      for (const line of parts) {
         const trimmed = line.trim();
-        if (!isTuiChrome(trimmed)) {
+        if (trimmed && !isTuiChrome(trimmed)) {
           insertLog(agentId, 'stdout', trimmed);
         }
       }
@@ -140,6 +153,11 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       // Only start idle detection after startup grace period
       if (Date.now() - startTime > STARTUP_GRACE_MS) {
         idleTimer = setTimeout(() => {
+          // Flush any remaining buffer before exiting
+          if (lineBuffer.trim() && !isTuiChrome(lineBuffer.trim())) {
+            insertLog(agentId, 'stdout', lineBuffer.trim());
+          }
+          lineBuffer = '';
           insertLog(agentId, 'system', 'Claude Code idle for 15s — sending /exit');
           try { ptyProc.write('/exit\r'); } catch {}
         }, IDLE_TIMEOUT_MS);
@@ -151,23 +169,41 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       ptyProcesses.delete(agentId);
       if (idleTimer) clearTimeout(idleTimer);
 
+      // Flush remaining line buffer
+      if (lineBuffer.trim() && !isTuiChrome(lineBuffer.trim())) {
+        insertLog(agentId, 'stdout', lineBuffer.trim());
+      }
+      lineBuffer = '';
+
+      let finalStatus: string;
       if (signal === 15 || signal === 9) {
+        finalStatus = 'killed';
         updateAgentStatus(agentId, 'killed');
         insertLog(agentId, 'system', `Process killed (signal: ${signal})`);
       } else if (exitCode === 0) {
+        finalStatus = 'done';
         updateAgentStatus(agentId, 'done');
         insertLog(agentId, 'system', `Process exited successfully (code: 0)`);
       } else {
+        finalStatus = 'error';
         updateAgentStatus(agentId, 'error');
         insertLog(agentId, 'system', `Process exited with error (code: ${exitCode})`);
       }
 
-      // Parse token usage from agent logs (Claude Code shows "↓ Xk tokens" in output)
+      // Generate summary and notify
+      notifyAgentComplete(agentId, name, finalStatus);
+      generateAgentSummary(agentId).catch(() => {});
+
+      // Parse token usage from raw PTY chunks (Claude Code shows token counts in TUI status bar)
+      // We check raw chunks because the TUI chrome filter strips status bar lines from logs
       try {
-        const logs = getLogsForAgent(agentId, 500);
-        const allText = logs.map(l => l.content).join(' ');
+        const chunks = getPtyChunks(agentId);
+        const rawText = chunks.map((c: { data: string }) => {
+          try { return Buffer.from(c.data, 'base64').toString(); } catch { return ''; }
+        }).join('');
+        const plainText = stripAnsi(rawText);
         // Match patterns like "↓ 2.1k tokens" or "↑ 703 tokens" or "1.5k tokens"
-        const tokenMatch = allText.match(/(\d+\.?\d*k?)\s*tokens/gi);
+        const tokenMatch = plainText.match(/(\d+\.?\d*k?)\s*tokens/gi);
         if (tokenMatch) {
           let totalTokens = 0;
           for (const m of tokenMatch) {
@@ -191,7 +227,9 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
         }
       } catch {}
 
-      if (!existingWorktreePath) removeWorktree(agentId, repo).catch(() => {});
+      // Keep git worktrees alive so users can review diffs and merge
+      // Only clean up plain dirs (no repo)
+      if (!existingWorktreePath && !repo) removeWorktree(agentId).catch(() => {});
     });
 
     return { pid, worktreePath };
@@ -245,24 +283,30 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
 
   child.on('exit', (code, signal) => {
     processes.delete(agentId);
+    let finalStatus: string;
     if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+      finalStatus = 'killed';
       updateAgentStatus(agentId, 'killed');
       insertLog(agentId, 'system', `Process killed (signal: ${signal})`);
     } else if (code === 0) {
+      finalStatus = 'done';
       updateAgentStatus(agentId, 'done');
       insertLog(agentId, 'system', `Process exited successfully (code: 0)`);
     } else {
+      finalStatus = 'error';
       updateAgentStatus(agentId, 'error');
       insertLog(agentId, 'system', `Process exited with error (code: ${code})`);
     }
-    if (!existingWorktreePath) removeWorktree(agentId, repo).catch(() => {});
+    notifyAgentComplete(agentId, name, finalStatus);
+    generateAgentSummary(agentId).catch(() => {});
+    if (!existingWorktreePath && !repo) removeWorktree(agentId).catch(() => {});
   });
 
   child.on('error', (err) => {
     processes.delete(agentId);
     updateAgentStatus(agentId, 'error');
     insertLog(agentId, 'system', `Process error: ${err.message}`);
-    if (!existingWorktreePath) removeWorktree(agentId, repo).catch(() => {});
+    if (!existingWorktreePath && !repo) removeWorktree(agentId).catch(() => {});
   });
 
   return { pid, worktreePath };

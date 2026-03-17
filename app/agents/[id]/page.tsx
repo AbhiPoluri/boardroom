@@ -8,6 +8,7 @@ import { PtyTerminal } from '@/components/PtyTerminal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { GitPanel } from '@/components/GitPanel';
 import type { Agent, Log } from '@/types';
 
 interface AgentPageProps {
@@ -65,7 +66,7 @@ export default function AgentPage({ params }: AgentPageProps) {
           if (data.tokens) setTokens(data.tokens);
         })
         .catch(() => {});
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [id, fetchAgent]);
 
@@ -217,6 +218,9 @@ export default function AgentPage({ params }: AgentPageProps) {
           </div>
         )}
       </div>
+
+      {/* Git panel */}
+      <GitPanel agentId={id} isActive={isActive} />
 
       {/* Terminal / Log viewer */}
       <div className="flex-1 overflow-hidden" style={{ minHeight: '400px', maxHeight: 'calc(100vh - 280px)' }}>

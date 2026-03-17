@@ -28,7 +28,7 @@ export async function GET(
         lastId = initial[initial.length - 1].id;
       }
 
-      // Poll for new chunks every 100ms
+      // Poll for new chunks every 500ms (was 100ms — major RAM/CPU savings)
       const interval = setInterval(() => {
         try {
           const newChunks = getPtyChunks(id, lastId);
@@ -40,7 +40,7 @@ export async function GET(
           clearInterval(interval);
           try { controller.close(); } catch {}
         }
-      }, 100);
+      }, 500);
 
       // Clean up when client disconnects
       req.signal.addEventListener('abort', () => {

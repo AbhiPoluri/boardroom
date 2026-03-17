@@ -36,7 +36,7 @@ async function waitForAgents(ids: string[], timeoutMs = 600000): Promise<void> {
 
 function buildContinuationMessage(spawnedIds: string[]): string {
   const sections: string[] = [
-    '[SYSTEM: Your spawned agents have finished. Their outputs are below. Review the results and decide whether to spawn more agents, resume them with follow-up tasks, or declare the work complete. If the task is fully done, say so clearly.]',
+    '[SYSTEM: Your spawned agents have finished. Their outputs are below. Review the results and decide whether to spawn more agents, resume them with follow-up tasks, or declare the work complete. If the task is fully done, say so clearly. When spawning follow-up agents that need files from multiple branches, tell them to merge the relevant branches first.]',
   ];
   for (const id of spawnedIds) {
     const agent = getAgentById(id);
@@ -47,7 +47,8 @@ function buildContinuationMessage(spawnedIds: string[]): string {
       .map(l => cleanLogLine(l.content))
       .filter(Boolean)
       .join('\n');
-    sections.push(`\n--- ${agent.name} (${id.slice(0, 8)}) [${agent.status}] ---\n${stdout || '(no output)'}`);
+    const branchInfo = agent.repo ? ` branch: boardroom/${id}` : '';
+    sections.push(`\n--- ${agent.name} (${id.slice(0, 8)}) [${agent.status}]${branchInfo} ---\n${stdout || '(no output)'}`);
   }
   return sections.join('\n');
 }

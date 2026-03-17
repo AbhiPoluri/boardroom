@@ -1,10 +1,13 @@
-import { spawn } from 'child_process';
-import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage } from '@/lib/db';
+import * as pty from 'node-pty';
+import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage, insertPtyChunk, clearPtyChunks, getPushRequests, getPushRequest, updatePushRequest, createNotification } from '@/lib/db';
 import { spawnAgent, resumeAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
 import type { AgentType } from '@/types';
-import { cleanLogLine } from './strip-tui';
+import { cleanLogLine, stripAnsi } from './strip-tui';
+
+// Fixed ID for the orchestrator — used to store PTY chunks
+export const ORCHESTRATOR_ID = '__orchestrator__';
 
 // JSON protocol for tool calling via claude --print (no API key required — uses CLI subscription)
 const SYSTEM_PROMPT = `You are the Boardroom orchestrator — a senior engineering manager that coordinates a fleet of AI coding agents.
@@ -19,11 +22,19 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
 {
   "reply": "your message to the user",
   "actions": [
-    {"tool": "spawn_agent", "input": {"task": "...", "type": "claude", "name": "short-name", "model": "sonnet"}},
+    {"tool": "spawn_agent", "input": {"task": "...", "type": "claude", "name": "short-name", "model": "sonnet", "repo": "/path/to/repo"}},
     {"tool": "resume_agent", "input": {"id": "agent-id-or-8char-prefix", "task": "new task description"}},
-    {"tool": "kill_agent", "input": {"id": "agent-id-or-prefix"}}
+    {"tool": "kill_agent", "input": {"id": "agent-id-or-prefix"}},
+    {"tool": "review_push_request", "input": {"id": "push-request-id", "action": "approve", "comment": "optional reason"}}
   ]
 }
+
+Push Requests:
+- When agents finish work on a repo, users can submit "push requests" for review
+- You'll see pending push requests in the fleet context below
+- Use "review_push_request" to approve (merges the branch) or reject them
+- Review the summary and changed files before approving
+- action must be "approve" or "reject"
 
 NOTE: Agent output is already included in the fleet context below for done/error agents (last 30 stdout lines). You do NOT need to fetch it — just read it from context and act on it directly.
 
@@ -35,6 +46,9 @@ Rules for actions:
 - "name" should be 1-3 words, kebab-case
 - For coding tasks always use type "claude"
 - "model" is optional: "haiku" for simple/fast tasks, "sonnet" for coding (default), "opus" for complex reasoning. Omit to use the default model.
+- "repo" is optional: absolute path to a git repo. When set, the agent gets its own git worktree (branch) of that repo. Use this for any task that involves reading or modifying code in a specific repo. Each agent gets an isolated branch so they can work in parallel without conflicts.
+- IMPORTANT: When agents work on a repo, ALWAYS include in the task description: "When done, git add all new/changed files and commit with a descriptive message." Otherwise their changes won't be committed and will be invisible to other agents or merge operations.
+- When spawning a follow-up agent that needs files from multiple prior agents' branches, include instructions like: "First merge branch boardroom/AGENT_ID into your branch using: git merge boardroom/AGENT_ID" so it can access all the work.
 
 Rules for reply:
 - Be specific and detailed: explain exactly what you're doing and why
@@ -62,6 +76,9 @@ interface CLIResult {
 }
 
 export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
+  // Clear old PTY chunks so the terminal starts fresh
+  clearPtyChunks(ORCHESTRATOR_ID);
+
   return new Promise((resolve, reject) => {
     const home = process.env.HOME || os.homedir();
     const nvmInit = `export NVM_DIR="${home}/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"`;
@@ -70,28 +87,34 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
     const escapedPrompt = prompt.replace(/'/g, `'\\''`);
     const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --output-format json '${escapedPrompt}'`;
 
-    const child = spawn('/bin/sh', ['-c', cmd], {
-      env: { ...process.env, HOME: home },
-      stdio: ['pipe', 'pipe', 'pipe'],
+    // Use PTY so the orchestrator terminal can render live output
+    const ptyProc = pty.spawn('/bin/sh', ['-c', cmd], {
+      name: 'xterm-256color',
+      cols: 58,
+      rows: 20,
+      env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>,
     });
 
-    // Close stdin immediately — claude hangs waiting for input otherwise
-    child.stdin?.end();
+    let output = '';
 
-    let stdout = '';
-    let stderr = '';
+    ptyProc.onData((data: string) => {
+      // Store raw PTY chunks for xterm.js rendering
+      insertPtyChunk(ORCHESTRATOR_ID, Buffer.from(data).toString('base64'));
+      // Collect plain text for JSON parsing
+      output += stripAnsi(data);
+    });
 
-    child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`claude CLI exited with code ${code}: ${stderr.slice(0, 200)}`));
+    ptyProc.onExit(({ exitCode }) => {
+      if (exitCode !== 0) {
+        reject(new Error(`claude CLI exited with code ${exitCode}: ${output.slice(0, 200)}`));
         return;
       }
       try {
-        const parsed = JSON.parse(stdout);
-        const text = parsed.result ?? parsed.content ?? stdout;
+        // The output may contain the JSON wrapped in misc text — extract it
+        const jsonMatch = output.match(/(\{[\s\S]*\})/);
+        const jsonStr = jsonMatch ? jsonMatch[1] : output;
+        const parsed = JSON.parse(jsonStr.trim());
+        const text = parsed.result ?? parsed.content ?? output;
         const usage = parsed.usage ? {
           input_tokens: parsed.usage.input_tokens || 0,
           output_tokens: parsed.usage.output_tokens || 0,
@@ -101,13 +124,11 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
         const model = parsed.modelUsage ? Object.keys(parsed.modelUsage)[0] : undefined;
         resolve({ text, usage, cost_usd: parsed.total_cost_usd, model });
       } catch {
-        resolve({ text: stdout });
+        resolve({ text: output });
       }
     });
 
-    child.on('error', reject);
-
-    // 3 minute timeout — orchestrator may plan many steps
+    // 3 minute timeout
     let settled = false;
     const originalResolve = resolve;
     const originalReject = reject;
@@ -116,7 +137,7 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
 
     setTimeout(() => {
       if (!settled) {
-        try { child.kill('SIGKILL'); } catch {}
+        try { ptyProc.kill(); } catch {}
         reject(new Error('claude CLI timed out after 180s'));
       }
     }, 180000);
@@ -177,6 +198,28 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
       updateAgentStatus(agent.id, 'killed');
       return { id: agent.id.slice(0, 8), status: 'killed' };
     }
+    case 'review_push_request': {
+      const { id, action: prAction, comment } = action.input as { id: string; action: 'approve' | 'reject'; comment?: string };
+      const pr = getPushRequest(id);
+      if (!pr) return { error: `Push request ${id} not found` };
+      if (pr.status !== 'pending') return { error: `Already ${pr.status}` };
+      if (prAction === 'approve') {
+        const { getAgentById } = await import('@/lib/db');
+        const agent = getAgentById(pr.agent_id);
+        if (agent?.repo) {
+          const { mergeWorktreeBranch } = await import('@/lib/worktree');
+          const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch);
+          if (!result.success) return { error: `Merge failed: ${result.message}` };
+        }
+        updatePushRequest(id, 'approved', comment);
+        createNotification('push_approved', `Push approved: ${pr.agent_name}`, comment || `${pr.branch} → ${pr.base_branch}`, pr.agent_id);
+        return { id, status: 'approved', message: `Merged ${pr.branch} into ${pr.base_branch}` };
+      } else {
+        updatePushRequest(id, 'rejected', comment);
+        createNotification('push_rejected', `Push rejected: ${pr.agent_name}`, comment || 'No reason', pr.agent_id);
+        return { id, status: 'rejected' };
+      }
+    }
     default:
       return { error: `Unknown tool: ${action.tool}` };
   }
@@ -210,9 +253,19 @@ export async function* runOrchestrator(
         return base;
       }).join('\n');
 
+  // Include pending push requests in context
+  const pendingPRs = getPushRequests('pending');
+  const prContext = pendingPRs.length === 0
+    ? 'No pending push requests.'
+    : pendingPRs.map((pr: any) => {
+        const files = JSON.parse(pr.changed_files_json || '[]');
+        return `  - PR #${pr.id.slice(0, 6)} from ${pr.agent_name}: ${pr.branch} → ${pr.base_branch} (${files.length} files) — "${pr.summary}"`;
+      }).join('\n');
+
   const stats = {
     active: getActiveAgentsCount(),
     pending_tasks: getPendingTasksCount(),
+    pending_prs: pendingPRs.length,
     total: agents.length,
   };
 
@@ -227,9 +280,13 @@ Current fleet status:
   Active agents: ${stats.active}
   Total agents: ${stats.total}
   Pending tasks: ${stats.pending_tasks}
+  Pending push requests: ${stats.pending_prs}
 
 Agent fleet (with output for finished agents):
 ${agentSummary}
+
+Push requests awaiting review:
+${prContext}
 
 ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMessage}`;
 
