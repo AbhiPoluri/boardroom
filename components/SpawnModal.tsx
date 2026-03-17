@@ -69,6 +69,15 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [templates, setTemplates] = useState<Record<string, { task: string; type: string; model: string }>>({});
+
+  // Load templates from localStorage after mount (SSR-safe)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('boardroom:templates');
+      if (saved) setTemplates(JSON.parse(saved));
+    } catch {}
+  }, []);
 
   // Load configs when opening the modal
   useEffect(() => {
@@ -249,44 +258,40 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
           /* ── SPAWN ── */
           <form onSubmit={handleSpawnSubmit} className="space-y-4">
             {/* Task Templates */}
-            {typeof window !== 'undefined' && (() => {
-              const savedTemplates = JSON.parse(localStorage.getItem('boardroom:templates') || '{}');
-              const templates = Object.entries(savedTemplates);
-              return templates.length > 0 ? (
-                <div className="space-y-1.5">
-                  <Label className="font-mono text-xs text-zinc-400">Quick Templates</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {templates.map(([key, value]: [string, any]) => (
-                      <div key={key} className="flex items-center gap-1 px-2 py-1 rounded-full bg-zinc-800 border border-zinc-700 hover:border-zinc-600 group">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTask(value.task);
-                            setType(value.type || 'claude');
-                            setModel(value.model || '');
-                          }}
-                          className="text-xs font-mono text-zinc-300 hover:text-zinc-100 transition-colors flex-1"
-                        >
-                          {key}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = { ...savedTemplates };
-                            delete updated[key];
-                            localStorage.setItem('boardroom:templates', JSON.stringify(updated));
-                            window.location.reload();
-                          }}
-                          className="p-0.5 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+            {Object.keys(templates).length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="font-mono text-xs text-zinc-400">Quick Templates</Label>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(templates).map(([key, value]) => (
+                    <div key={key} className="flex items-center gap-1 px-2 py-1 rounded-full bg-zinc-800 border border-zinc-700 hover:border-zinc-600 group">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTask(value.task);
+                          setType((value.type as AgentType) || 'claude');
+                          setModel(value.model || '');
+                        }}
+                        className="text-xs font-mono text-zinc-300 hover:text-zinc-100 transition-colors flex-1"
+                      >
+                        {key}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...templates };
+                          delete updated[key];
+                          localStorage.setItem('boardroom:templates', JSON.stringify(updated));
+                          setTemplates(updated);
+                        }}
+                        className="p-0.5 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ) : null;
-            })()}
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label className="font-mono text-xs text-zinc-400">Task / Prompt</Label>
@@ -412,17 +417,16 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" disabled={loading}>
                 cancel
               </Button>
-              {typeof window !== 'undefined' && task.trim().length > 15 && (
+              {task.trim().length > 15 && (
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={() => {
                     const tplName = prompt('Save as template (name):');
                     if (tplName?.trim()) {
-                      const templates = JSON.parse(localStorage.getItem('boardroom:templates') || '{}');
-                      templates[tplName.trim()] = { task, type, model };
-                      localStorage.setItem('boardroom:templates', JSON.stringify(templates));
-                      window.location.reload();
+                      const updated = { ...templates, [tplName.trim()]: { task, type, model } };
+                      localStorage.setItem('boardroom:templates', JSON.stringify(updated));
+                      setTemplates(updated);
                     }
                   }}
                   className="font-mono text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 flex items-center gap-1.5"

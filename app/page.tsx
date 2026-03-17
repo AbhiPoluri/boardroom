@@ -52,18 +52,8 @@ export default function Dashboard() {
   const [filter, setFilter] = useState<'all' | 'active' | 'done' | 'error' | 'idle'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
   const [searchQuery, setSearchQuery] = useState('');
-  const [groupMode, setGroupMode] = useState<'flat' | 'repo' | 'status'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('boardroom:groupMode') as any) || 'flat';
-    }
-    return 'flat';
-  });
-  const [filterPresets, setFilterPresets] = useState<Record<string, { filter: string; sortBy: string; searchQuery: string }>>(() => {
-    if (typeof window !== 'undefined') {
-      return JSON.parse(localStorage.getItem('boardroom:filterPresets') || '{}');
-    }
-    return {};
-  });
+  const [groupMode, setGroupMode] = useState<'flat' | 'repo' | 'status'>('flat');
+  const [filterPresets, setFilterPresets] = useState<Record<string, { filter: string; sortBy: string; searchQuery: string }>>({});
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -95,6 +85,14 @@ export default function Dashboard() {
     fetchTokens();
     const interval = setInterval(fetchTokens, 15000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Restore localStorage preferences after mount (SSR-safe)
+  useEffect(() => {
+    const saved = localStorage.getItem('boardroom:groupMode');
+    if (saved) setGroupMode(saved as 'flat' | 'repo' | 'status');
+    const presets = localStorage.getItem('boardroom:filterPresets');
+    if (presets) { try { setFilterPresets(JSON.parse(presets)); } catch {} }
   }, []);
 
   useEffect(() => {
