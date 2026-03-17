@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  Plus, Trash2, Play, Save, Workflow,
+  Plus, Trash2, Play, Save, Workflow, Clock,
   Zap, Activity, CheckCircle2, XCircle, Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -461,6 +461,12 @@ export default function WorkflowsPage() {
               <Separator orientation="vertical" className="h-4" />
               <span className="font-mono text-xs text-zinc-500">{isNew ? 'new' : edName}</span>
               <Badge variant="outline" className="text-[10px] font-mono">{edSteps.length} step{edSteps.length !== 1 ? 's' : ''}</Badge>
+              {edCronEnabled && edSchedule && (
+                <Badge className="text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 gap-1">
+                  <Clock className="w-2.5 h-2.5" />
+                  {describeCron(edSchedule)}
+                </Badge>
+              )}
               {currentDraftId && (
                 <Badge className="text-[9px] font-mono bg-amber-500/15 text-amber-400 border-amber-500/25">
                   draft
@@ -520,8 +526,13 @@ export default function WorkflowsPage() {
                       : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-300'
                   }`}
                 >
-                  <div className="font-mono text-xs font-medium truncate">{wf.name}</div>
-                  {/* Mini pipeline */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-medium truncate">{wf.name}</span>
+                    {!!wf.cron_enabled && wf.schedule && (
+                      <Clock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                    )}
+                  </div>
+                  {/* Mini pipeline + cron badge */}
                   <div className="flex items-center gap-1 mt-2">
                     {wf.steps.map((s, i) => {
                       const theme = TYPE_THEME[s.type] || TYPE_THEME.claude;
@@ -537,6 +548,11 @@ export default function WorkflowsPage() {
                       );
                     })}
                     <span className="text-[9px] font-mono text-zinc-600 ml-1">{wf.steps.length}s</span>
+                    {!!wf.cron_enabled && wf.schedule && (
+                      <span className="text-[8px] font-mono text-amber-400/70 ml-auto px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                        {describeCron(wf.schedule)}
+                      </span>
+                    )}
                   </div>
                 </button>
               ))
