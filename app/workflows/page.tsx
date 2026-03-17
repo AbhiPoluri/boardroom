@@ -41,21 +41,75 @@ const TYPE_THEME: Record<string, { dot: string; badge: string; ring: string; lab
 };
 
 
+const DRAFT_KEY = 'boardroom:workflow-draft';
+
+interface DraftState {
+  selected: string | null;
+  isNew: boolean;
+  name: string;
+  desc: string;
+  steps: WorkflowStep[];
+  schedule: string;
+  cronEnabled: boolean;
+  savedAt: number;
+}
+
+function loadDraft(): DraftState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as DraftState;
+    // Expire drafts older than 24h
+    if (Date.now() - draft.savedAt > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return draft;
+  } catch { return null; }
+}
+
+function saveDraft(draft: DraftState) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
+}
+
+function clearDraft() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(DRAFT_KEY);
+}
+
 export default function WorkflowsPage() {
+  const draft = loadDraft();
+
   const [workflows, setWorkflows] = useState<WorkflowDef[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(draft?.selected ?? null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [running, setRunning] = useState(false);
+  const [hasDraft, setHasDraft] = useState(!!draft);
 
-  const [edName, setEdName] = useState('');
-  const [edDesc, setEdDesc] = useState('');
-  const [edSteps, setEdSteps] = useState<WorkflowStep[]>([]);
-  const [edSchedule, setEdSchedule] = useState('0 * * * *');
-  const [edCronEnabled, setEdCronEnabled] = useState(false);
-  const [isNew, setIsNew] = useState(false);
+  const [edName, setEdName] = useState(draft?.name ?? '');
+  const [edDesc, setEdDesc] = useState(draft?.desc ?? '');
+  const [edSteps, setEdSteps] = useState<WorkflowStep[]>(draft?.steps ?? []);
+  const [edSchedule, setEdSchedule] = useState(draft?.schedule ?? '0 * * * *');
+  const [edCronEnabled, setEdCronEnabled] = useState(draft?.cronEnabled ?? false);
+  const [isNew, setIsNew] = useState(draft?.isNew ?? false);
+
+  // Auto-save draft on editor changes
+  useEffect(() => {
+    if (!isNew && !selected) return; // no editor open
+    const timeout = setTimeout(() => {
+      saveDraft({
+        selected, isNew, name: edName, desc: edDesc,
+        steps: edSteps, schedule: edSchedule, cronEnabled: edCronEnabled,
+        savedAt: Date.now(),
+      });
+    }, 500); // debounce 500ms
+    return () => clearTimeout(timeout);
+  }, [selected, isNew, edName, edDesc, edSteps, edSchedule, edCronEnabled]);
 
 
   // Active runs state
@@ -84,7 +138,13 @@ export default function WorkflowsPage() {
     fetch('/api/workflows').then(r => r.json()).then(data => {
       setWorkflows(data.workflows || []);
       setLoading(false);
+      // If we restored a draft editing an existing workflow, re-select it
+      if (draft?.selected && !draft.isNew) {
+        const wf = (data.workflows || []).find((w: WorkflowDef) => w.id === draft.selected);
+        if (wf) setSelected(wf.id);
+      }
     }).catch(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll active runs + fetch history
@@ -163,6 +223,7 @@ export default function WorkflowsPage() {
       if (data.workflow?.id) setSelected(data.workflow.id);
       setIsNew(false);
       setSuccess('saved');
+      clearDraft();
       setTimeout(() => setSuccess(''), 2000);
     } catch { setError('Failed to save'); } finally { setSaving(false); }
   };
@@ -258,6 +319,11 @@ export default function WorkflowsPage() {
               <Separator orientation="vertical" className="h-4" />
               <span className="font-mono text-xs text-zinc-500">{isNew ? 'new' : edName}</span>
               <Badge variant="outline" className="text-[10px] font-mono">{edSteps.length} step{edSteps.length !== 1 ? 's' : ''}</Badge>
+              {hasDraft && (
+                <Badge className="text-[9px] font-mono bg-amber-500/15 text-amber-400 border-amber-500/25 cursor-pointer" onClick={() => { clearDraft(); setHasDraft(false); }}>
+                  draft restored · ×
+                </Badge>
+              )}
               {error && <Badge variant="destructive" className="text-[10px] font-mono">{error}</Badge>}
               {success && <Badge className="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 border-emerald-500/25">{success}</Badge>}
             </>
