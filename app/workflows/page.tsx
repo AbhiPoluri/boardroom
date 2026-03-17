@@ -41,9 +41,11 @@ const TYPE_THEME: Record<string, { dot: string; badge: string; ring: string; lab
 };
 
 
-const DRAFT_KEY = 'boardroom:workflow-draft';
+const DRAFTS_KEY = 'boardroom:workflow-drafts';
+const ACTIVE_DRAFT_KEY = 'boardroom:workflow-active-draft';
 
 interface DraftState {
+  id: string;
   selected: string | null;
   isNew: boolean;
   name: string;
@@ -54,62 +56,108 @@ interface DraftState {
   savedAt: number;
 }
 
-function loadDraft(): DraftState | null {
-  if (typeof window === 'undefined') return null;
+function loadDrafts(): DraftState[] {
+  if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const draft = JSON.parse(raw) as DraftState;
-    // Expire drafts older than 24h
-    if (Date.now() - draft.savedAt > 24 * 60 * 60 * 1000) {
-      localStorage.removeItem(DRAFT_KEY);
-      return null;
-    }
-    return draft;
-  } catch { return null; }
+    const raw = localStorage.getItem(DRAFTS_KEY);
+    if (!raw) return [];
+    const drafts = JSON.parse(raw) as DraftState[];
+    // Expire drafts older than 7 days
+    const valid = drafts.filter(d => Date.now() - d.savedAt < 7 * 24 * 60 * 60 * 1000);
+    if (valid.length !== drafts.length) localStorage.setItem(DRAFTS_KEY, JSON.stringify(valid));
+    return valid;
+  } catch { return []; }
 }
 
-function saveDraft(draft: DraftState) {
+function saveDrafts(drafts: DraftState[]) {
   if (typeof window === 'undefined') return;
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
+  try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch {}
 }
 
-function clearDraft() {
+function getActiveDraftId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(ACTIVE_DRAFT_KEY);
+}
+
+function setActiveDraftId(id: string | null) {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(DRAFT_KEY);
+  if (id) localStorage.setItem(ACTIVE_DRAFT_KEY, id);
+  else localStorage.removeItem(ACTIVE_DRAFT_KEY);
+}
+
+function genDraftId() {
+  return `draft_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
 export default function WorkflowsPage() {
-  const draft = loadDraft();
+  const initialDrafts = loadDrafts();
+  const activeDraftId = getActiveDraftId();
+  const activeDraft = activeDraftId ? initialDrafts.find(d => d.id === activeDraftId) : null;
 
   const [workflows, setWorkflows] = useState<WorkflowDef[]>([]);
-  const [selected, setSelected] = useState<string | null>(draft?.selected ?? null);
+  const [drafts, setDrafts] = useState<DraftState[]>(initialDrafts);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(activeDraft?.id ?? null);
+  const [selected, setSelected] = useState<string | null>(activeDraft?.selected ?? null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [running, setRunning] = useState(false);
-  const [hasDraft, setHasDraft] = useState(!!draft);
 
-  const [edName, setEdName] = useState(draft?.name ?? '');
-  const [edDesc, setEdDesc] = useState(draft?.desc ?? '');
-  const [edSteps, setEdSteps] = useState<WorkflowStep[]>(draft?.steps ?? []);
-  const [edSchedule, setEdSchedule] = useState(draft?.schedule ?? '0 * * * *');
-  const [edCronEnabled, setEdCronEnabled] = useState(draft?.cronEnabled ?? false);
-  const [isNew, setIsNew] = useState(draft?.isNew ?? false);
+  const [edName, setEdName] = useState(activeDraft?.name ?? '');
+  const [edDesc, setEdDesc] = useState(activeDraft?.desc ?? '');
+  const [edSteps, setEdSteps] = useState<WorkflowStep[]>(activeDraft?.steps ?? []);
+  const [edSchedule, setEdSchedule] = useState(activeDraft?.schedule ?? '0 * * * *');
+  const [edCronEnabled, setEdCronEnabled] = useState(activeDraft?.cronEnabled ?? false);
+  const [isNew, setIsNew] = useState(activeDraft?.isNew ?? false);
 
-  // Auto-save draft on editor changes
+  // Auto-save current editor state as a draft
   useEffect(() => {
-    if (!isNew && !selected) return; // no editor open
+    if (!isNew && !selected) return;
     const timeout = setTimeout(() => {
-      saveDraft({
-        selected, isNew, name: edName, desc: edDesc,
+      const draftId = currentDraftId || genDraftId();
+      if (!currentDraftId) setCurrentDraftId(draftId);
+      const draft: DraftState = {
+        id: draftId, selected, isNew, name: edName, desc: edDesc,
         steps: edSteps, schedule: edSchedule, cronEnabled: edCronEnabled,
         savedAt: Date.now(),
+      };
+      setDrafts(prev => {
+        const updated = prev.filter(d => d.id !== draftId);
+        updated.unshift(draft);
+        saveDrafts(updated);
+        return updated;
       });
-    }, 500); // debounce 500ms
+      setActiveDraftId(draftId);
+    }, 500);
     return () => clearTimeout(timeout);
-  }, [selected, isNew, edName, edDesc, edSteps, edSchedule, edCronEnabled]);
+  }, [selected, isNew, edName, edDesc, edSteps, edSchedule, edCronEnabled, currentDraftId]);
+
+  const deleteDraft = (draftId: string) => {
+    setDrafts(prev => {
+      const updated = prev.filter(d => d.id !== draftId);
+      saveDrafts(updated);
+      return updated;
+    });
+    if (currentDraftId === draftId) {
+      setCurrentDraftId(null);
+      setActiveDraftId(null);
+    }
+  };
+
+  const loadDraftIntoEditor = (draft: DraftState) => {
+    setCurrentDraftId(draft.id);
+    setActiveDraftId(draft.id);
+    setSelected(draft.selected);
+    setIsNew(draft.isNew);
+    setEdName(draft.name);
+    setEdDesc(draft.desc);
+    setEdSteps(draft.steps);
+    setEdSchedule(draft.schedule);
+    setEdCronEnabled(draft.cronEnabled);
+    setError('');
+    setSuccess('');
+  };
 
 
   // Active runs state
@@ -167,6 +215,8 @@ export default function WorkflowsPage() {
   }, []);
 
   const selectWorkflow = (wf: WorkflowDef) => {
+    setCurrentDraftId(null);
+    setActiveDraftId(null);
     setSelected(wf.id);
     setEdName(wf.name);
     setEdDesc(wf.description);
@@ -186,6 +236,9 @@ export default function WorkflowsPage() {
   };
 
   const startNew = () => {
+    const newDraftId = genDraftId();
+    setCurrentDraftId(newDraftId);
+    setActiveDraftId(newDraftId);
     setSelected(null);
     setViewingRun(null);
     setEdName('');
@@ -223,7 +276,7 @@ export default function WorkflowsPage() {
       if (data.workflow?.id) setSelected(data.workflow.id);
       setIsNew(false);
       setSuccess('saved');
-      clearDraft();
+      if (currentDraftId) deleteDraft(currentDraftId);
       setTimeout(() => setSuccess(''), 2000);
     } catch { setError('Failed to save'); } finally { setSaving(false); }
   };
@@ -319,9 +372,9 @@ export default function WorkflowsPage() {
               <Separator orientation="vertical" className="h-4" />
               <span className="font-mono text-xs text-zinc-500">{isNew ? 'new' : edName}</span>
               <Badge variant="outline" className="text-[10px] font-mono">{edSteps.length} step{edSteps.length !== 1 ? 's' : ''}</Badge>
-              {hasDraft && (
-                <Badge className="text-[9px] font-mono bg-amber-500/15 text-amber-400 border-amber-500/25 cursor-pointer" onClick={() => { clearDraft(); setHasDraft(false); }}>
-                  draft restored · ×
+              {currentDraftId && (
+                <Badge className="text-[9px] font-mono bg-amber-500/15 text-amber-400 border-amber-500/25">
+                  draft
                 </Badge>
               )}
               {error && <Badge variant="destructive" className="text-[10px] font-mono">{error}</Badge>}
@@ -398,6 +451,56 @@ export default function WorkflowsPage() {
                   </div>
                 </button>
               ))
+            )}
+
+            {/* Drafts */}
+            {drafts.length > 0 && (
+              <>
+                <Separator className="my-2 bg-zinc-800" />
+                <div className="px-2 pt-1 pb-1.5 flex items-center gap-1.5">
+                  <Eye className="w-3 h-3 text-amber-500/60" />
+                  <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">drafts</span>
+                  <Badge variant="outline" className="text-[8px] font-mono ml-auto h-4 px-1.5">
+                    {drafts.length}
+                  </Badge>
+                </div>
+                {drafts.map((d) => (
+                  <div
+                    key={d.id}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-all group/draft ${
+                      currentDraftId === d.id
+                        ? 'bg-amber-950/30 text-amber-300 ring-1 ring-amber-800/40'
+                        : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => loadDraftIntoEditor(d)}
+                        className="flex-1 text-left min-w-0"
+                      >
+                        <div className="font-mono text-[11px] font-medium truncate">
+                          {d.name || 'untitled'}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[9px] font-mono text-zinc-700">
+                            {d.steps.length} step{d.steps.length !== 1 ? 's' : ''}
+                          </span>
+                          <span className="text-[9px] font-mono text-zinc-700">
+                            {new Date(d.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => deleteDraft(d.id)}
+                        className="p-1 text-zinc-700 hover:text-red-400 opacity-0 group-hover/draft:opacity-100 transition-all flex-shrink-0"
+                        title="Delete draft"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
 
             {/* Active runs */}
