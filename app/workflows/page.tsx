@@ -111,13 +111,16 @@ export default function WorkflowsPage() {
   const [edCronEnabled, setEdCronEnabled] = useState(activeDraft?.cronEnabled ?? false);
   const [isNew, setIsNew] = useState(activeDraft?.isNew ?? false);
 
-  // Suppress auto-save while programmatically loading a workflow/draft
-  const suppressDraft = useRef(false);
+  // Only true after the user has actually changed something in the editor.
+  // Prevents a programmatic load (selectWorkflow) from immediately creating a draft.
+  const isDirty = useRef(false);
 
   // Auto-save current editor state as a draft
   useEffect(() => {
     if (!isNew && !selected) return;
-    if (suppressDraft.current) return;
+    // Don't auto-create a new draft until the user has actually edited something.
+    // If a draft is already in progress (currentDraftId set), keep saving it.
+    if (!currentDraftId && !isDirty.current) return;
     const timeout = setTimeout(() => {
       const draftId = currentDraftId || genDraftId();
       if (!currentDraftId) setCurrentDraftId(draftId);
@@ -150,7 +153,7 @@ export default function WorkflowsPage() {
   };
 
   const loadDraftIntoEditor = (draft: DraftState) => {
-    suppressDraft.current = true;
+    isDirty.current = false;
     setCurrentDraftId(draft.id);
     setActiveDraftId(draft.id);
     setSelected(draft.selected);
@@ -162,7 +165,8 @@ export default function WorkflowsPage() {
     setEdCronEnabled(draft.cronEnabled);
     setError('');
     setSuccess('');
-    setTimeout(() => { suppressDraft.current = false; }, 600);
+    // Existing draft — allow auto-save to keep updating it
+    isDirty.current = true;
   };
 
 
@@ -221,7 +225,7 @@ export default function WorkflowsPage() {
   }, []);
 
   const selectWorkflow = (wf: WorkflowDef) => {
-    suppressDraft.current = true;
+    isDirty.current = false;
     setCurrentDraftId(null);
     setActiveDraftId(null);
     setSelected(wf.id);
@@ -234,8 +238,6 @@ export default function WorkflowsPage() {
     setViewingRun(null);
     setError('');
     setSuccess('');
-    // Allow auto-save again after React has flushed state + debounce has a chance to fire
-    setTimeout(() => { suppressDraft.current = false; }, 600);
   };
 
   const viewRun = (runId: string) => {
@@ -750,7 +752,7 @@ export default function WorkflowsPage() {
                       <label className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5 block">name</label>
                       <Input
                         value={edName}
-                        onChange={(e) => setEdName(e.target.value)}
+                        onChange={(e) => { isDirty.current = true; setEdName(e.target.value); }}
                         placeholder="my-workflow"
                         className="font-mono text-sm h-8 bg-zinc-950/50 border-zinc-800 text-zinc-100"
                       />
@@ -759,7 +761,7 @@ export default function WorkflowsPage() {
                       <label className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5 block">description</label>
                       <Input
                         value={edDesc}
-                        onChange={(e) => setEdDesc(e.target.value)}
+                        onChange={(e) => { isDirty.current = true; setEdDesc(e.target.value); }}
                         placeholder="optional"
                         className="font-mono text-sm h-8 bg-zinc-950/50 border-zinc-800 text-zinc-100"
                       />
@@ -777,7 +779,7 @@ export default function WorkflowsPage() {
 
                 <WorkflowCanvas
                   steps={edSteps}
-                  onChange={setEdSteps}
+                  onChange={(steps) => { isDirty.current = true; setEdSteps(steps); }}
                   isRunning={running}
                   runAgents={runAgents}
                 />
@@ -796,7 +798,7 @@ export default function WorkflowsPage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setEdCronEnabled(!edCronEnabled)}
+                        onClick={() => { isDirty.current = true; setEdCronEnabled(!edCronEnabled); }}
                         className={`relative w-8 h-[18px] rounded-full transition-colors ${
                           edCronEnabled ? 'bg-emerald-600' : 'bg-zinc-700'
                         }`}
@@ -809,7 +811,7 @@ export default function WorkflowsPage() {
                     {edCronEnabled && (
                       <CronPicker
                         value={edSchedule}
-                        onChange={setEdSchedule}
+                        onChange={(v) => { isDirty.current = true; setEdSchedule(v); }}
                       />
                     )}
                   </CardContent>
