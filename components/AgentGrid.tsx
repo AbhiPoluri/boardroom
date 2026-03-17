@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, X, Trash2, Terminal, LayoutGrid, ExternalLink, RotateCcw } from 'lucide-react';
+import { GitBadge } from '@/components/GitPanel';
 import type { Agent } from '@/types';
 
 interface TokenInfo {
@@ -74,14 +75,14 @@ function useAgentLogs(agentId: string, active: boolean, terminalMode: boolean) {
     fetchLogs();
     // Poll only when active or in terminal mode; otherwise one-shot fetch is enough
     if (!active && !terminalMode) return () => { cancelled = true; };
-    const interval = setInterval(fetchLogs, active ? 1500 : 5000);
+    const interval = setInterval(fetchLogs, active ? 3000 : 10000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [agentId, active, terminalMode]);
 
   return logs;
 }
 
-function AgentCard({ agent, onKill, onDelete, onResume, tokens }: { agent: Agent; onKill: (id: string) => void; onDelete: (id: string) => void; onResume: (id: string, task: string) => void; tokens?: TokenInfo }) {
+function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }: { agent: Agent; onKill: (id: string) => void; onDelete: (id: string) => void; onResume: (id: string, task: string) => void; tokens?: TokenInfo; allAgents?: Agent[] }) {
   const router = useRouter();
   const [terminalMode, setTerminalMode] = useState(false);
   const [resumeMode, setResumeMode] = useState(false);
@@ -89,6 +90,12 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens }: { agent: Agent
   const resumeInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
   const isActive = agent.status === 'running' || agent.status === 'spawning';
+  const isWorkflow = agent.name.startsWith('wf-');
+  const depIds = agent.depends_on ? agent.depends_on.split(',').filter(Boolean) : [];
+  const depNames = depIds.map(id => {
+    const dep = allAgents.find(a => a.id === id);
+    return dep?.name || id.slice(0, 6);
+  });
   const statusColor = STATUS_COLORS[agent.status] || 'text-zinc-500 bg-zinc-500';
   const [dotText, dotBg] = statusColor.split(' ');
   const borderColor = STATUS_BORDER[agent.status] || 'border-zinc-800';
@@ -123,6 +130,11 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens }: { agent: Agent
         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 ${dotText}`}>
           {agent.type}
         </span>
+        {isWorkflow && (
+          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-950 border border-purple-800/50 text-purple-400">
+            wf
+          </span>
+        )}
         <span className={`flex items-center gap-1 text-[10px] font-mono ${dotText}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${dotBg} ${isActive ? 'animate-pulse' : ''}`} />
           {agent.status}
@@ -253,12 +265,30 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens }: { agent: Agent
             )}
           </div>
 
+          {/* Dependencies */}
+          {depNames.length > 0 && (
+            <div className="flex items-center gap-1 mt-1 flex-shrink-0 flex-wrap">
+              <span className="text-[9px] font-mono text-zinc-700">deps:</span>
+              {depNames.map((name, i) => (
+                <span key={i} className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-500">
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Footer */}
           <div className="flex items-center justify-between mt-1.5 flex-shrink-0">
             <span className="text-[10px] font-mono text-zinc-700">
               {new Date(agent.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             <div className="flex items-center gap-2">
+              {agent.repo && <GitBadge agentId={agent.id} />}
+              {tokens && tokens.cost_usd > 0 && (
+                <span className="text-[10px] font-mono text-emerald-400/70">
+                  ${tokens.cost_usd.toFixed(4)}
+                </span>
+              )}
               {tokens && (tokens.input_tokens > 0 || tokens.output_tokens > 0) && (
                 <span className="text-[10px] font-mono text-blue-400/70" title={`in: ${tokens.input_tokens.toLocaleString()} / out: ${tokens.output_tokens.toLocaleString()}`}>
                   {formatTokens(tokens.input_tokens + tokens.output_tokens)} tok
@@ -290,14 +320,14 @@ function SpawnCard({ onSpawn }: { onSpawn: () => void }) {
   );
 }
 
-export function AgentGrid({ agents, onKill, onDelete, onSpawn, onResume, agentTokens }: AgentGridProps) {
+export function AgentGrid({ agents, onKill, onDelete, onSpawn, onResume, agentTokens, allAgents }: AgentGridProps & { allAgents?: Agent[] }) {
   return (
     <div
       className="grid gap-3 content-start"
       style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
     >
       {agents.map((agent) => (
-        <AgentCard key={agent.id} agent={agent} onKill={onKill} onDelete={onDelete} onResume={onResume} tokens={agentTokens?.[agent.id]} />
+        <AgentCard key={agent.id} agent={agent} onKill={onKill} onDelete={onDelete} onResume={onResume} tokens={agentTokens?.[agent.id]} allAgents={allAgents || agents} />
       ))}
       <SpawnCard onSpawn={onSpawn} />
     </div>

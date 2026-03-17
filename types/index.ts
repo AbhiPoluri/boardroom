@@ -13,6 +13,7 @@ export interface Agent {
   worktree_path: string | null;
   pid: number | null;
   port: number | null;
+  depends_on: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -43,10 +44,35 @@ export interface SpawnAgentRequest {
   type: AgentType;
   repo?: string;
   name?: string;
+  model?: string;
+}
+
+export interface ImportAgentRequest {
+  path: string;
+  name?: string;
+  task?: string;
+  type?: AgentType;
+  model?: string;
 }
 
 export interface SendMessageRequest {
   message: string;
+}
+
+export type PushRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PushRequest {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  branch: string;
+  base_branch: string;
+  summary: string;
+  changed_files_json: string;
+  status: PushRequestStatus;
+  reviewer_comment: string | null;
+  created_at: number;
+  reviewed_at: number | null;
 }
 
 export interface ApiResponse<T> {

@@ -4,11 +4,11 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 7391",
     "build": "next build && node scripts/fix-symlinks.js",
     "start": "next start",
     "lint": "eslint",
-    "electron:dev": "concurrently \"next dev -p 3000\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
+    "electron:dev": "concurrently \"next dev -p 7391\" \"wait-on http://localhost:7391 && NODE_ENV=development electron .\"",
     "electron:build": "next build && electron-builder --mac && node scripts/fix-native-modules.js",
     "electron:pack": "electron-builder --mac --dir && node scripts/fix-native-modules.js"
   },
@@ -51,6 +51,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "commander": "^14.0.3",
+    "cron-parser": "^5.5.0",
+    "framer-motion": "^12.37.0",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "node-pty": "^1.2.0-beta.12",
