@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Copy } from 'lucide-react';
 import type { AgentType } from '@/types';
 
 interface WorkflowStep {
@@ -32,16 +32,60 @@ const NODE_W = 200;
 const NODE_H = 120;
 const H_GAP = 240;
 const V_GAP = 150;
-const HANDLE_R = 6;
+const GRID_SIZE = 20;
+const MAX_HISTORY = 30;
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 2.0;
+const ZOOM_STEP = 0.1;
+
+function snapToGrid(val: number): number {
+  return Math.round(val / GRID_SIZE) * GRID_SIZE;
+}
+
+function deepCloneSteps(steps: WorkflowStep[]): WorkflowStep[] {
+  return steps.map(s => ({
+    ...s,
+    dependsOn: s.dependsOn ? [...s.dependsOn] : undefined,
+    position: s.position ? { ...s.position } : undefined,
+  }));
+}
+
+/** Detect if adding edge from -> to would create a cycle */
+function wouldCreateCycle(steps: WorkflowStep[], fromName: string, toIdx: number): boolean {
+  const toName = steps[toIdx].name;
+  // If from === to, it's a self-loop
+  if (fromName === toName) return true;
+
+  // BFS from fromName backwards through dependsOn to see if we can reach toName
+  // i.e., check if toName is an ancestor of fromName
+  const nameToStep = new Map<string, WorkflowStep>();
+  steps.forEach(s => nameToStep.set(s.name, s));
+
+  // We need to check: if we add toName depends on fromName,
+  // does fromName already (transitively) depend on toName?
+  const visited = new Set<string>();
+  const queue = [fromName];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (cur === toName) return true;
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    const step = nameToStep.get(cur);
+    if (step?.dependsOn) {
+      for (const dep of step.dependsOn) {
+        if (!visited.has(dep)) queue.push(dep);
+      }
+    }
+  }
+  return false;
+}
 
 function autoLayout(steps: WorkflowStep[]): WorkflowStep[] {
   if (steps.length === 0) return steps;
 
-  // Build adjacency: which steps does each step depend on?
   const nameToIdx = new Map<string, number>();
   steps.forEach((s, i) => nameToIdx.set(s.name, i));
 
-  // Topological layers
   const inDegree = steps.map(() => 0);
   const adj: number[][] = steps.map(() => []);
   steps.forEach((s, i) => {
@@ -57,7 +101,7 @@ function autoLayout(steps: WorkflowStep[]): WorkflowStep[] {
   const layers: number[][] = [];
   const placed = new Set<number>();
   let queue = steps.map((_, i) => i).filter(i => inDegree[i] === 0);
-  if (queue.length === 0) queue = [0]; // fallback
+  if (queue.length === 0) queue = [0];
 
   while (queue.length > 0) {
     layers.push([...queue]);
@@ -71,7 +115,6 @@ function autoLayout(steps: WorkflowStep[]): WorkflowStep[] {
     }
     queue = next;
   }
-  // Place any remaining unplaced nodes
   steps.forEach((_, i) => {
     if (!placed.has(i)) {
       layers.push([i]);
@@ -83,31 +126,100 @@ function autoLayout(steps: WorkflowStep[]): WorkflowStep[] {
   const startX = 60;
   const startY = 60;
   layers.forEach((layer, li) => {
-    const totalHeight = layer.length * NODE_H + (layer.length - 1) * (V_GAP - NODE_H);
-    const offsetY = startY + Math.max(0, (NODE_H - totalHeight) / 2);
     layer.forEach((idx, vi) => {
-      if (!result[idx].position) {
-        result[idx].position = {
-          x: startX + li * H_GAP,
-          y: offsetY + vi * V_GAP,
-        };
-      }
+      result[idx].position = {
+        x: snapToGrid(startX + li * H_GAP),
+        y: snapToGrid(startY + vi * V_GAP),
+      };
     });
   });
 
   return result;
 }
 
+/** Get bezier midpoint for a cubic bezier */
+function bezierMidpoint(x1: number, y1: number, cx1: number, cy1: number, cx2: number, cy2: number, x2: number, y2: number) {
+  const t = 0.5;
+  const mt = 1 - t;
+  return {
+    x: mt * mt * mt * x1 + 3 * mt * mt * t * cx1 + 3 * mt * t * t * cx2 + t * t * t * x2,
+    y: mt * mt * mt * y1 + 3 * mt * mt * t * cy1 + 3 * mt * t * t * cy2 + t * t * t * y2,
+  };
+}
+
 export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const canvasFocusRef = useRef<HTMLDivElement>(null);
+
+  // Selection: supports multi-select
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [connecting, setConnecting] = useState<{ fromIdx: number; mouse: { x: number; y: number } } | null>(null);
+
+  // Zoom
+  const [zoom, setZoom] = useState(1);
+
+  // Undo/redo
+  const [undoStack, setUndoStack] = useState<WorkflowStep[][]>([]);
+  const [redoStack, setRedoStack] = useState<WorkflowStep[][]>([]);
+  const lastPushedRef = useRef<string>('');
+
+  // Connection hover/delete
+  const [hoveredConn, setHoveredConn] = useState<number | null>(null);
+  const [connDeleteIdx, setConnDeleteIdx] = useState<number | null>(null);
+  const [invalidFlash, setInvalidFlash] = useState<{ fromIdx: number; toIdx: number } | null>(null);
+
+  // Tooltip
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; step: WorkflowStep; runStatus: { stepName: string; agentId: string; status: string } | null; startTime?: number } | null>(null);
+  const tooltipTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Push to undo stack on meaningful changes
+  const pushUndo = useCallback((prevSteps: WorkflowStep[]) => {
+    const key = JSON.stringify(prevSteps.map(s => ({ n: s.name, t: s.type, m: s.model, tk: s.task, d: s.dependsOn, p: s.position })));
+    if (key === lastPushedRef.current) return;
+    lastPushedRef.current = key;
+    setUndoStack(prev => {
+      const next = [...prev, deepCloneSteps(prevSteps)];
+      if (next.length > MAX_HISTORY) next.shift();
+      return next;
+    });
+    setRedoStack([]);
+  }, []);
+
+  // Wrapped onChange that tracks undo
+  const handleChange = useCallback((newSteps: WorkflowStep[]) => {
+    pushUndo(steps);
+    onChange(newSteps);
+  }, [steps, onChange, pushUndo]);
+
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack(s => s.slice(0, -1));
+    setRedoStack(s => [...s, deepCloneSteps(steps)]);
+    lastPushedRef.current = '';
+    onChange(prev);
+  }, [undoStack, steps, onChange]);
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack(s => s.slice(0, -1));
+    setUndoStack(s => [...s, deepCloneSteps(steps)]);
+    lastPushedRef.current = '';
+    onChange(next);
+  }, [redoStack, steps, onChange]);
+
+  // selectedIdx for backward compat (first selected)
+  const selectedIdx = useMemo(() => {
+    const arr = Array.from(selectedIds);
+    return arr.length === 1 ? arr[0] : null;
+  }, [selectedIds]);
 
   // Auto-layout on first render or when steps lack positions
   useEffect(() => {
@@ -122,40 +234,59 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
     return runAgents.find(a => a.stepName === stepName) || null;
   }, [runAgents]);
 
-  // Node drag handlers
+  // Node drag handlers with snap-to-grid
   const handleNodeMouseDown = useCallback((idx: number, e: React.MouseEvent) => {
     e.stopPropagation();
     const step = steps[idx];
     if (!step.position) return;
     setDragIdx(idx);
     setDragOffset({
-      x: e.clientX - step.position.x - pan.x,
-      y: e.clientY - step.position.y - pan.y,
+      x: e.clientX / zoom - step.position.x - pan.x / zoom,
+      y: e.clientY / zoom - step.position.y - pan.y / zoom,
     });
-  }, [steps, pan]);
+    // Focus canvas for keyboard shortcuts
+    canvasFocusRef.current?.focus();
+  }, [steps, pan, zoom]);
+
+  // Track drag start for undo
+  const dragStartSteps = useRef<WorkflowStep[] | null>(null);
 
   useEffect(() => {
     if (dragIdx === null) return;
+    if (!dragStartSteps.current) {
+      dragStartSteps.current = deepCloneSteps(steps);
+    }
     const handleMove = (e: MouseEvent) => {
-      const newX = e.clientX - dragOffset.x - pan.x;
-      const newY = e.clientY - dragOffset.y - pan.y;
+      const newX = snapToGrid(e.clientX / zoom - dragOffset.x - pan.x / zoom);
+      const newY = snapToGrid(e.clientY / zoom - dragOffset.y - pan.y / zoom);
       onChange(steps.map((s, i) => i === dragIdx ? { ...s, position: { x: newX, y: newY } } : s));
     };
-    const handleUp = () => setDragIdx(null);
+    const handleUp = () => {
+      if (dragStartSteps.current) {
+        pushUndo(dragStartSteps.current);
+        dragStartSteps.current = null;
+      }
+      setDragIdx(null);
+    };
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
     return () => {
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseup', handleUp);
     };
-  }, [dragIdx, dragOffset, pan, steps, onChange]);
+  }, [dragIdx, dragOffset, pan, steps, onChange, zoom, pushUndo]);
 
   // Pan handlers
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.target === containerRef.current || e.target === svgRef.current) {
-      setSelectedIdx(null);
+    if (e.target === containerRef.current || e.target === svgRef.current ||
+        (e.target as HTMLElement).dataset?.canvasBg === 'true') {
+      if (!e.shiftKey) {
+        setSelectedIds(new Set());
+      }
+      setConnDeleteIdx(null);
       setIsPanning(true);
       panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+      canvasFocusRef.current?.focus();
     }
   }, [pan]);
 
@@ -176,16 +307,16 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
     };
   }, [isPanning]);
 
-  // Connection drag
+  // Connection drag with cycle validation
   const handleHandleMouseDown = useCallback((idx: number, side: 'out', e: React.MouseEvent) => {
     e.stopPropagation();
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setConnecting({
       fromIdx: idx,
-      mouse: { x: e.clientX - rect.left - pan.x, y: e.clientY - rect.top - pan.y },
+      mouse: { x: (e.clientX - rect.left - pan.x) / zoom, y: (e.clientY - rect.top - pan.y) / zoom },
     });
-  }, [pan]);
+  }, [pan, zoom]);
 
   useEffect(() => {
     if (!connecting) return;
@@ -194,13 +325,12 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
     const handleMove = (e: MouseEvent) => {
       setConnecting(prev => prev ? {
         ...prev,
-        mouse: { x: e.clientX - rect.left - pan.x, y: e.clientY - rect.top - pan.y },
+        mouse: { x: (e.clientX - rect.left - pan.x) / zoom, y: (e.clientY - rect.top - pan.y) / zoom },
       } : null);
     };
     const handleUp = (e: MouseEvent) => {
-      // Check if we dropped on a node's input handle
-      const mx = e.clientX - rect.left - pan.x;
-      const my = e.clientY - rect.top - pan.y;
+      const mx = (e.clientX - rect.left - pan.x) / zoom;
+      const my = (e.clientY - rect.top - pan.y) / zoom;
       for (let i = 0; i < steps.length; i++) {
         if (i === connecting.fromIdx) continue;
         const pos = steps[i].position;
@@ -208,11 +338,22 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
         const hx = pos.x;
         const hy = pos.y + NODE_H / 2;
         if (Math.abs(mx - hx) < 16 && Math.abs(my - hy) < 16) {
-          // Add dependency
-          const deps = steps[i].dependsOn || [];
           const fromName = steps[connecting.fromIdx].name;
+          // Self-connection check
+          if (fromName === steps[i].name) {
+            setInvalidFlash({ fromIdx: connecting.fromIdx, toIdx: i });
+            setTimeout(() => setInvalidFlash(null), 600);
+            break;
+          }
+          // Cycle check
+          if (wouldCreateCycle(steps, fromName, i)) {
+            setInvalidFlash({ fromIdx: connecting.fromIdx, toIdx: i });
+            setTimeout(() => setInvalidFlash(null), 600);
+            break;
+          }
+          const deps = steps[i].dependsOn || [];
           if (!deps.includes(fromName)) {
-            onChange(steps.map((s, si) => si === i ? { ...s, dependsOn: [...deps, fromName] } : s));
+            handleChange(steps.map((s, si) => si === i ? { ...s, dependsOn: [...deps, fromName] } : s));
           }
           break;
         }
@@ -225,7 +366,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseup', handleUp);
     };
-  }, [connecting, steps, pan, onChange]);
+  }, [connecting, steps, pan, zoom, handleChange]);
 
   const addNode = useCallback(() => {
     const maxX = steps.reduce((mx, s) => Math.max(mx, (s.position?.x || 0)), 0);
@@ -234,25 +375,154 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
       type: 'claude',
       model: 'sonnet',
       task: '',
-      position: { x: maxX + H_GAP, y: 60 },
+      position: { x: snapToGrid(maxX + H_GAP), y: snapToGrid(60) },
     };
-    onChange([...steps, newStep]);
-  }, [steps, onChange]);
+    handleChange([...steps, newStep]);
+  }, [steps, handleChange]);
 
   const removeNode = useCallback((idx: number) => {
     const removedName = steps[idx].name;
-    // Remove this node and clean up dependencies referencing it
     const next = steps.filter((_, i) => i !== idx).map(s => ({
       ...s,
       dependsOn: s.dependsOn?.filter(d => d !== removedName),
     }));
-    onChange(next);
-    setSelectedIdx(null);
-  }, [steps, onChange]);
+    handleChange(next);
+    setSelectedIds(new Set());
+  }, [steps, handleChange]);
+
+  const removeNodes = useCallback((indices: Set<number>) => {
+    const removedNames = new Set(Array.from(indices).map(i => steps[i].name));
+    const next = steps.filter((_, i) => !indices.has(i)).map(s => ({
+      ...s,
+      dependsOn: s.dependsOn?.filter(d => !removedNames.has(d)),
+    }));
+    handleChange(next);
+    setSelectedIds(new Set());
+  }, [steps, handleChange]);
+
+  const duplicateNode = useCallback((idx: number) => {
+    const orig = steps[idx];
+    const newStep: WorkflowStep = {
+      ...orig,
+      name: `${orig.name} (copy)`,
+      dependsOn: orig.dependsOn ? [...orig.dependsOn] : undefined,
+      position: orig.position ? {
+        x: snapToGrid(orig.position.x + 40),
+        y: snapToGrid(orig.position.y + 40),
+      } : undefined,
+    };
+    handleChange([...steps, newStep]);
+    setSelectedIds(new Set([steps.length]));
+  }, [steps, handleChange]);
 
   const updateStep = useCallback((idx: number, field: string, value: unknown) => {
-    onChange(steps.map((s, i) => i === idx ? { ...s, [field]: value } : s));
-  }, [steps, onChange]);
+    handleChange(steps.map((s, i) => i === idx ? { ...s, [field]: value } : s));
+  }, [steps, handleChange]);
+
+  const handleAutoLayout = useCallback(() => {
+    handleChange(autoLayout(steps.map(s => ({ ...s, position: undefined }))));
+  }, [steps, handleChange]);
+
+  const removeConnection = useCallback((connIdx: number) => {
+    const conn = connections[connIdx];
+    if (!conn) return;
+    const targetStep = steps[conn.to];
+    const fromName = steps[conn.from].name;
+    const newDeps = (targetStep.dependsOn || []).filter(d => d !== fromName);
+    handleChange(steps.map((s, i) => i === conn.to ? { ...s, dependsOn: newDeps.length > 0 ? newDeps : undefined } : s));
+    setConnDeleteIdx(null);
+    setHoveredConn(null);
+  }, [steps, handleChange]);
+
+  // Zoom handlers
+  const zoomIn = useCallback(() => setZoom(z => Math.min(z + ZOOM_STEP, MAX_ZOOM)), []);
+  const zoomOut = useCallback(() => setZoom(z => Math.max(z - ZOOM_STEP, MIN_ZOOM)), []);
+  const fitToView = useCallback(() => {
+    if (steps.length === 0 || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    steps.forEach(s => {
+      if (s.position) {
+        minX = Math.min(minX, s.position.x);
+        minY = Math.min(minY, s.position.y);
+        maxX = Math.max(maxX, s.position.x + NODE_W);
+        maxY = Math.max(maxY, s.position.y + NODE_H);
+      }
+    });
+    if (minX === Infinity) return;
+    const contentW = maxX - minX + 80;
+    const contentH = maxY - minY + 80;
+    const scaleX = rect.width / contentW;
+    const scaleY = rect.height / contentH;
+    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), MIN_ZOOM), MAX_ZOOM);
+    setZoom(newZoom);
+    setPan({
+      x: (rect.width - contentW * newZoom) / 2 - minX * newZoom + 40 * newZoom,
+      y: (rect.height - contentH * newZoom) / 2 - minY * newZoom + 40 * newZoom,
+    });
+  }, [steps]);
+
+  // Cmd+scroll = zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+        setZoom(z => Math.min(Math.max(z + delta, MIN_ZOOM), MAX_ZOOM));
+      }
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Keyboard shortcuts (Cmd+Z, Cmd+Shift+Z, Cmd+A, Backspace/Delete)
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Don't fire when editing inputs/textareas
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    const meta = e.metaKey || e.ctrlKey;
+
+    // Cmd+Z / Cmd+Shift+Z
+    if (meta && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+    if (meta && e.key === 'z' && e.shiftKey) {
+      e.preventDefault();
+      redo();
+      return;
+    }
+    // Cmd+A select all
+    if (meta && e.key === 'a') {
+      e.preventDefault();
+      setSelectedIds(new Set(steps.map((_, i) => i)));
+      return;
+    }
+    // Backspace/Delete
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (selectedIds.size > 0) {
+        e.preventDefault();
+        removeNodes(selectedIds);
+      }
+      return;
+    }
+    // Escape deselect
+    if (e.key === 'Escape') {
+      setSelectedIds(new Set());
+      setConnDeleteIdx(null);
+    }
+  }, [undo, redo, steps, selectedIds, removeNodes]);
+
+  useEffect(() => {
+    const el = canvasFocusRef.current;
+    if (!el) return;
+    el.addEventListener('keydown', handleKeyDown as EventListener);
+    return () => el.removeEventListener('keydown', handleKeyDown as EventListener);
+  }, [handleKeyDown]);
 
   // Compute canvas size
   const canvasSize = useMemo(() => {
@@ -291,34 +561,128 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
 
   const selectedStep = selectedIdx !== null ? steps[selectedIdx] : null;
 
+  // Right-click context menu for duplicate
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; idx: number } | null>(null);
+  const handleContextMenu = useCallback((idx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, idx });
+  }, []);
+
+  // Close context menu on click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [contextMenu]);
+
+  // Node hover tooltip
+  const handleNodeMouseEnter = useCallback((step: WorkflowStep, e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    tooltipTimeout.current = setTimeout(() => {
+      setTooltip({
+        x: e.clientX - rect.left + 12,
+        y: e.clientY - rect.top - 10,
+        step,
+        runStatus: getRunStatus(step.name),
+      });
+    }, 500);
+  }, [getRunStatus]);
+
+  const handleNodeMouseLeave = useCallback(() => {
+    if (tooltipTimeout.current) clearTimeout(tooltipTimeout.current);
+    setTooltip(null);
+  }, []);
+
+  // Mini-map data
+  const miniMap = useMemo(() => {
+    if (steps.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    steps.forEach(s => {
+      if (s.position) {
+        minX = Math.min(minX, s.position.x);
+        minY = Math.min(minY, s.position.y);
+        maxX = Math.max(maxX, s.position.x + NODE_W);
+        maxY = Math.max(maxY, s.position.y + NODE_H);
+      }
+    });
+    if (minX === Infinity) return null;
+    const pad = 40;
+    return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+  }, [steps]);
+
   return (
     <div className="flex flex-col">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-2 px-1">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={undo}
+            disabled={undoStack.length === 0}
+            className="p-1.5 rounded-md border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            title="Undo (Cmd+Z)"
+          >
+            <Undo2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={redo}
+            disabled={redoStack.length === 0}
+            className="p-1.5 rounded-md border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            title="Redo (Cmd+Shift+Z)"
+          >
+            <Redo2 className="w-3.5 h-3.5" />
+          </button>
+          <div className="w-px h-4 bg-zinc-800 mx-1" />
+          <button
+            onClick={handleAutoLayout}
+            className="p-1.5 rounded-md border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-all"
+            title="Auto-layout"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="flex items-center gap-1 text-[10px] text-zinc-600 font-mono">
+          {selectedIds.size > 1 && (
+            <span className="mr-2 text-zinc-500">{selectedIds.size} selected</span>
+          )}
+          <span>{Math.round(zoom * 100)}%</span>
+        </div>
+      </div>
+
       {/* Canvas */}
       <div
-        ref={containerRef}
-        className="relative overflow-auto border border-zinc-800 rounded-xl cursor-grab active:cursor-grabbing"
+        ref={(el) => {
+          (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+          (canvasFocusRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        }}
+        tabIndex={0}
+        className="relative overflow-auto border border-zinc-800 rounded-xl cursor-grab active:cursor-grabbing outline-none"
         style={{
           minHeight: 400,
           maxHeight: 500,
           backgroundImage: 'radial-gradient(circle, #27272a 1px, transparent 1px)',
-          backgroundSize: '20px 20px',
+          backgroundSize: `${GRID_SIZE * zoom}px ${GRID_SIZE * zoom}px`,
           backgroundPosition: `${pan.x}px ${pan.y}px`,
         }}
         onMouseDown={handleCanvasMouseDown}
       >
         <div
+          data-canvas-bg="true"
           style={{
-            width: canvasSize.width,
-            height: canvasSize.height,
+            width: canvasSize.width * zoom,
+            height: canvasSize.height * zoom,
             position: 'relative',
-            transform: `translate(${pan.x}px, ${pan.y}px)`,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
           }}
         >
           {/* SVG layer for connections */}
           <svg
             ref={svgRef}
-            className="absolute inset-0 pointer-events-none"
-            style={{ width: canvasSize.width, height: canvasSize.height, overflow: 'visible' }}
+            className="absolute inset-0"
+            style={{ width: canvasSize.width, height: canvasSize.height, overflow: 'visible', pointerEvents: 'none' }}
           >
             <defs>
               <marker id="canvas-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -329,6 +693,9 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
               </marker>
               <marker id="canvas-arrow-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                 <path d="M0,0 L8,4 L0,8" fill="#3b82f6" />
+              </marker>
+              <marker id="canvas-arrow-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8" fill="#ef4444" />
               </marker>
             </defs>
 
@@ -342,22 +709,53 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
               const x2 = toPos.x;
               const y2 = toPos.y + NODE_H / 2;
               const midX = (x1 + x2) / 2;
-              const color = getConnectionColor(conn.from, conn.to);
-              const markerId = color === '#10b981' ? 'canvas-arrow-green'
+
+              const isHovered = hoveredConn === ci;
+              const isFlashing = invalidFlash && invalidFlash.fromIdx === conn.from && invalidFlash.toIdx === conn.to;
+              const color = isFlashing ? '#ef4444' : getConnectionColor(conn.from, conn.to);
+              const markerId = isFlashing ? 'canvas-arrow-red'
+                : color === '#10b981' ? 'canvas-arrow-green'
                 : color === '#3b82f6' ? 'canvas-arrow-blue'
                 : 'canvas-arrow';
 
+              const mid = bezierMidpoint(x1, y1, midX, y1, midX, y2, x2, y2);
+
               return (
-                <path
-                  key={ci}
-                  d={`M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={2}
-                  markerEnd={`url(#${markerId})`}
-                  strokeDasharray={isRunning ? '6 4' : 'none'}
-                  className={isRunning && color === '#3b82f6' ? 'animate-dash' : ''}
-                />
+                <g key={ci}>
+                  {/* Invisible fat hitbox for hover/click */}
+                  <path
+                    d={`M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={16}
+                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                    onMouseEnter={() => setHoveredConn(ci)}
+                    onMouseLeave={() => { setHoveredConn(null); }}
+                    onClick={(e) => { e.stopPropagation(); setConnDeleteIdx(ci); }}
+                  />
+                  {/* Visible connection line */}
+                  <path
+                    d={`M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`}
+                    fill="none"
+                    stroke={isHovered ? '#a1a1aa' : color}
+                    strokeWidth={isHovered ? 3 : 2}
+                    markerEnd={`url(#${markerId})`}
+                    strokeDasharray={isRunning ? '6 4' : 'none'}
+                    className={`transition-all duration-150 ${isRunning && color === '#3b82f6' ? 'animate-dash' : ''} ${isFlashing ? 'animate-flash-red' : ''}`}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  {/* Delete button at midpoint */}
+                  {connDeleteIdx === ci && (
+                    <g
+                      style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                      onClick={(e) => { e.stopPropagation(); removeConnection(ci); }}
+                    >
+                      <circle cx={mid.x} cy={mid.y} r={10} fill="#18181b" stroke="#ef4444" strokeWidth={1.5} />
+                      <line x1={mid.x - 4} y1={mid.y - 4} x2={mid.x + 4} y2={mid.y + 4} stroke="#ef4444" strokeWidth={2} />
+                      <line x1={mid.x + 4} y1={mid.y - 4} x2={mid.x - 4} y2={mid.y + 4} stroke="#ef4444" strokeWidth={2} />
+                    </g>
+                  )}
+                </g>
               );
             })}
 
@@ -384,7 +782,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
           {steps.map((step, idx) => {
             if (!step.position) return null;
             const colors = TYPE_COLORS[step.type] || TYPE_COLORS.claude;
-            const isSelected = selectedIdx === idx;
+            const isSelected = selectedIds.has(idx);
             const isDragging = dragIdx === idx;
             const runStatus = getRunStatus(step.name);
 
@@ -399,6 +797,9 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                   height: NODE_H,
                   zIndex: isDragging ? 50 : isSelected ? 40 : 10,
                 }}
+                onMouseEnter={(e) => handleNodeMouseEnter(step, e)}
+                onMouseLeave={handleNodeMouseLeave}
+                onContextMenu={(e) => handleContextMenu(idx, e)}
               >
                 {/* Input handle (left) */}
                 <div
@@ -424,22 +825,30 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                   }`}
                   style={{ backgroundColor: '#18181b', borderColor: isSelected ? undefined : colors.border }}
                   onMouseDown={(e) => handleNodeMouseDown(idx, e)}
-                  onClick={(e) => { e.stopPropagation(); setSelectedIdx(idx); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                      // Multi-select toggle
+                      setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(idx)) next.delete(idx);
+                        else next.add(idx);
+                        return next;
+                      });
+                    } else {
+                      setSelectedIds(new Set([idx]));
+                    }
+                  }}
                 >
                   {/* Header row */}
                   <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800/60">
-                    {/* Step number */}
                     <span
                       className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold text-zinc-950 flex-shrink-0"
                       style={{ backgroundColor: colors.dot }}
                     >
                       {idx + 1}
                     </span>
-
-                    {/* Name */}
                     <span className="text-xs text-zinc-200 truncate flex-1 font-medium">{step.name}</span>
-
-                    {/* Delete on selected */}
                     {isSelected && (
                       <button
                         className="p-0.5 rounded text-zinc-600 hover:text-red-400 transition-colors"
@@ -498,6 +907,141 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
             <Plus className="w-4 h-4 text-zinc-600 group-hover:text-emerald-400 transition-colors" />
           </button>
         </div>
+
+        {/* Zoom controls (bottom-right) */}
+        <div className="absolute bottom-3 right-3 flex items-center gap-1 z-50">
+          <button
+            onClick={zoomOut}
+            className="p-1 rounded-md bg-zinc-900/90 border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-all"
+            title="Zoom out"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={fitToView}
+            className="p-1 rounded-md bg-zinc-900/90 border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-all"
+            title="Fit to view"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={zoomIn}
+            className="p-1 rounded-md bg-zinc-900/90 border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-all"
+            title="Zoom in"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Mini-map (bottom-left) */}
+        {miniMap && (
+          <div
+            className="absolute bottom-3 left-3 z-50 rounded-md border border-zinc-800 bg-zinc-950/90 overflow-hidden"
+            style={{ width: 120, height: 80 }}
+          >
+            <svg width="120" height="80" viewBox={`${miniMap.minX} ${miniMap.minY} ${miniMap.maxX - miniMap.minX} ${miniMap.maxY - miniMap.minY}`}>
+              {/* Connection lines */}
+              {connections.map((conn, ci) => {
+                const fromPos = steps[conn.from].position;
+                const toPos = steps[conn.to].position;
+                if (!fromPos || !toPos) return null;
+                return (
+                  <line
+                    key={ci}
+                    x1={fromPos.x + NODE_W / 2}
+                    y1={fromPos.y + NODE_H / 2}
+                    x2={toPos.x + NODE_W / 2}
+                    y2={toPos.y + NODE_H / 2}
+                    stroke="#3f3f46"
+                    strokeWidth={4}
+                  />
+                );
+              })}
+              {/* Node dots */}
+              {steps.map((step, idx) => {
+                if (!step.position) return null;
+                const colors = TYPE_COLORS[step.type] || TYPE_COLORS.claude;
+                return (
+                  <rect
+                    key={idx}
+                    x={step.position.x}
+                    y={step.position.y}
+                    width={NODE_W}
+                    height={NODE_H}
+                    rx={6}
+                    fill={colors.dot}
+                    opacity={0.6}
+                  />
+                );
+              })}
+              {/* Viewport indicator */}
+              {containerRef.current && (() => {
+                const rect = containerRef.current.getBoundingClientRect();
+                const vx = -pan.x / zoom;
+                const vy = -pan.y / zoom;
+                const vw = rect.width / zoom;
+                const vh = rect.height / zoom;
+                return (
+                  <rect
+                    x={vx}
+                    y={vy}
+                    width={vw}
+                    height={vh}
+                    fill="none"
+                    stroke="#a1a1aa"
+                    strokeWidth={6}
+                    opacity={0.4}
+                    rx={4}
+                  />
+                );
+              })()}
+            </svg>
+          </div>
+        )}
+
+        {/* Tooltip */}
+        {tooltip && (
+          <div
+            className="absolute z-[60] pointer-events-none px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-700 shadow-xl font-mono max-w-[280px]"
+            style={{ left: tooltip.x, top: tooltip.y }}
+          >
+            <div className="text-[10px] text-zinc-300 font-medium mb-1">{tooltip.step.name}</div>
+            <div className="text-[9px] text-zinc-500 leading-relaxed mb-1">
+              {tooltip.step.task || 'no task defined'}
+            </div>
+            {tooltip.runStatus && (
+              <div className="text-[9px] text-zinc-500">
+                agent: <span className="text-zinc-400">{tooltip.runStatus.agentId}</span>
+                {' | '}status: <span className={
+                  tooltip.runStatus.status === 'done' ? 'text-emerald-400'
+                  : tooltip.runStatus.status === 'error' ? 'text-red-400'
+                  : 'text-blue-400'
+                }>{tooltip.runStatus.status}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Right-click context menu */}
+        {contextMenu && (
+          <div
+            className="fixed z-[100] py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl font-mono"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-zinc-800 transition-colors"
+              onClick={() => { duplicateNode(contextMenu.idx); setContextMenu(null); }}
+            >
+              <Copy className="w-3 h-3" /> Duplicate
+            </button>
+            <button
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-red-400 hover:bg-zinc-800 transition-colors"
+              onClick={() => { removeNode(contextMenu.idx); setContextMenu(null); }}
+            >
+              <Trash2 className="w-3 h-3" /> Delete
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Selected node detail panel */}
@@ -507,13 +1051,20 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">edit node</span>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => duplicateNode(selectedIdx)}
+                className="text-[10px] text-zinc-400/70 hover:text-zinc-300 flex items-center gap-1 transition-colors"
+                title="Duplicate node"
+              >
+                <Copy className="w-3 h-3" /> duplicate
+              </button>
+              <button
                 onClick={() => removeNode(selectedIdx)}
                 className="text-[10px] text-red-400/70 hover:text-red-400 flex items-center gap-1 transition-colors"
               >
                 <Trash2 className="w-3 h-3" /> delete
               </button>
               <button
-                onClick={() => setSelectedIdx(null)}
+                onClick={() => setSelectedIds(new Set())}
                 className="text-zinc-600 hover:text-zinc-400 transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
@@ -530,8 +1081,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                 onChange={(e) => {
                   const oldName = selectedStep.name;
                   const newName = e.target.value;
-                  // Rename in deps too
-                  onChange(steps.map((s, i) => {
+                  handleChange(steps.map((s, i) => {
                     const updated = i === selectedIdx ? { ...s, name: newName } : { ...s };
                     if (updated.dependsOn) {
                       updated.dependsOn = updated.dependsOn.map(d => d === oldName ? newName : d);
@@ -608,6 +1158,15 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                       type="checkbox"
                       checked={isChecked}
                       onChange={(e) => {
+                        if (e.target.checked) {
+                          // Validate: would this create a cycle?
+                          if (wouldCreateCycle(steps, s.name, selectedIdx)) {
+                            // Flash briefly — don't add
+                            setInvalidFlash({ fromIdx: i, toIdx: selectedIdx });
+                            setTimeout(() => setInvalidFlash(null), 600);
+                            return;
+                          }
+                        }
                         const newDeps = e.target.checked
                           ? [...deps, s.name]
                           : deps.filter(d => d !== s.name);
@@ -627,7 +1186,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
         </div>
       )}
 
-      {/* Dash animation keyframe */}
+      {/* Animations */}
       <style jsx>{`
         @keyframes dashMove {
           from { stroke-dashoffset: 0; }
@@ -635,6 +1194,13 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
         }
         :global(.animate-dash) {
           animation: dashMove 0.8s linear infinite;
+        }
+        @keyframes flashRed {
+          0%, 100% { stroke: #ef4444; stroke-width: 3; }
+          50% { stroke: #fca5a5; stroke-width: 4; }
+        }
+        :global(.animate-flash-red) {
+          animation: flashRed 0.3s ease-in-out 2;
         }
       `}</style>
     </div>
