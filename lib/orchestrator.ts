@@ -25,7 +25,9 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
     {"tool": "spawn_agent", "input": {"task": "...", "type": "claude", "name": "short-name", "model": "sonnet", "repo": "/path/to/repo"}},
     {"tool": "resume_agent", "input": {"id": "agent-id-or-8char-prefix", "task": "new task description"}},
     {"tool": "kill_agent", "input": {"id": "agent-id-or-prefix"}},
-    {"tool": "review_push_request", "input": {"id": "push-request-id", "action": "approve", "comment": "optional reason"}}
+    {"tool": "review_push_request", "input": {"id": "push-request-id", "action": "approve", "comment": "optional reason"}},
+    {"tool": "create_workflow", "input": {"name": "my-workflow", "description": "what it does", "steps": [{"name": "step-1", "type": "claude", "task": "...", "model": "sonnet", "dependsOn": [], "stepType": "standard"}]}},
+    {"tool": "run_workflow", "input": {"name": "existing-workflow-name"}}
   ]
 }
 
@@ -49,6 +51,15 @@ Rules for actions:
 - "repo" is optional: absolute path to a git repo. When set, the agent gets its own git worktree (branch) of that repo. Use this for any task that involves reading or modifying code in a specific repo. Each agent gets an isolated branch so they can work in parallel without conflicts.
 - IMPORTANT: When agents work on a repo, ALWAYS include in the task description: "When done, git add all new/changed files and commit with a descriptive message." Otherwise their changes won't be committed and will be invisible to other agents or merge operations.
 - When spawning a follow-up agent that needs files from multiple prior agents' branches, include instructions like: "First merge branch boardroom/AGENT_ID into your branch using: git merge boardroom/AGENT_ID" so it can access all the work.
+
+Workflows:
+- Use "create_workflow" to define reusable multi-step pipelines that can be saved and re-run
+- Each step has: name, type (claude/test), task, model (optional), dependsOn (list of step names), stepType (standard/evaluator/router)
+- stepType "evaluator": evaluates its dependency's output — retries if FAIL/NEEDS CHANGES (set maxRetries, default 3)
+- stepType "router": classifies input and routes to one of its "routes" (list of step names) — skips unselected routes
+- Output from completed steps is automatically injected as context into dependent steps
+- Use "run_workflow" to execute an already-saved workflow by name
+- Workflows run in ~/boardroom-sandbox by default
 
 Rules for reply:
 - Be specific and detailed: explain exactly what you're doing and why
@@ -219,6 +230,36 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         createNotification('push_rejected', `Push rejected: ${pr.agent_name}`, comment || 'No reason', pr.agent_id);
         return { id, status: 'rejected' };
       }
+    }
+    case 'create_workflow': {
+      const { name, description, steps, schedule, cron_enabled } = action.input as {
+        name: string; description?: string; steps: any[]; schedule?: string; cron_enabled?: boolean;
+      };
+      const { saveWorkflow } = await import('@/lib/db');
+      const id = uuidv4();
+      // Auto-assign positions if not provided
+      const stepsWithPos = steps.map((s: any, i: number) => ({
+        ...s,
+        position: s.position || { x: 80 + i * 300, y: 150 },
+      }));
+      saveWorkflow(id, name, description || '', stepsWithPos, {
+        schedule: schedule || null,
+        cronEnabled: cron_enabled ? 1 : 0,
+        layout: null,
+      });
+      return { id, name, steps: stepsWithPos.length, message: `Workflow "${name}" created with ${stepsWithPos.length} steps` };
+    }
+    case 'run_workflow': {
+      const { name } = action.input as { name: string };
+      const { getAllWorkflows } = await import('@/lib/db');
+      const workflows = getAllWorkflows();
+      const wf = (workflows as any[]).find((w: any) => w.name === name);
+      if (!wf) return { error: `Workflow "${name}" not found` };
+      let steps: any[];
+      try { steps = JSON.parse(wf.steps_json); } catch { return { error: 'Failed to parse workflow steps' }; }
+      const { runWorkflow } = await import('@/lib/workflow-runner');
+      const result = await runWorkflow(name, steps);
+      return { runId: result.runId, agents: result.agents.length, message: `Workflow "${name}" started (run ${result.runId})` };
     }
     default:
       return { error: `Unknown tool: ${action.tool}` };
