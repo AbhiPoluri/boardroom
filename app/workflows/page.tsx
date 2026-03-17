@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Trash2, Play, Save, Workflow,
   Zap, Activity, CheckCircle2, XCircle, Eye,
@@ -111,9 +111,13 @@ export default function WorkflowsPage() {
   const [edCronEnabled, setEdCronEnabled] = useState(activeDraft?.cronEnabled ?? false);
   const [isNew, setIsNew] = useState(activeDraft?.isNew ?? false);
 
+  // Suppress auto-save while programmatically loading a workflow/draft
+  const suppressDraft = useRef(false);
+
   // Auto-save current editor state as a draft
   useEffect(() => {
     if (!isNew && !selected) return;
+    if (suppressDraft.current) return;
     const timeout = setTimeout(() => {
       const draftId = currentDraftId || genDraftId();
       if (!currentDraftId) setCurrentDraftId(draftId);
@@ -146,6 +150,7 @@ export default function WorkflowsPage() {
   };
 
   const loadDraftIntoEditor = (draft: DraftState) => {
+    suppressDraft.current = true;
     setCurrentDraftId(draft.id);
     setActiveDraftId(draft.id);
     setSelected(draft.selected);
@@ -157,6 +162,7 @@ export default function WorkflowsPage() {
     setEdCronEnabled(draft.cronEnabled);
     setError('');
     setSuccess('');
+    setTimeout(() => { suppressDraft.current = false; }, 600);
   };
 
 
@@ -187,8 +193,8 @@ export default function WorkflowsPage() {
       setWorkflows(data.workflows || []);
       setLoading(false);
       // If we restored a draft editing an existing workflow, re-select it
-      if (draft?.selected && !draft.isNew) {
-        const wf = (data.workflows || []).find((w: WorkflowDef) => w.id === draft.selected);
+      if (activeDraft?.selected && !activeDraft.isNew) {
+        const wf = (data.workflows || []).find((w: WorkflowDef) => w.id === activeDraft.selected);
         if (wf) setSelected(wf.id);
       }
     }).catch(() => setLoading(false));
@@ -215,6 +221,7 @@ export default function WorkflowsPage() {
   }, []);
 
   const selectWorkflow = (wf: WorkflowDef) => {
+    suppressDraft.current = true;
     setCurrentDraftId(null);
     setActiveDraftId(null);
     setSelected(wf.id);
@@ -227,6 +234,8 @@ export default function WorkflowsPage() {
     setViewingRun(null);
     setError('');
     setSuccess('');
+    // Allow auto-save again after React has flushed state + debounce has a chance to fire
+    setTimeout(() => { suppressDraft.current = false; }, 600);
   };
 
   const viewRun = (runId: string) => {
