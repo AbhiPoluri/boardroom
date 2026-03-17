@@ -89,27 +89,36 @@ function waitForAgent(agentId: string, timeoutMs = 600_000): Promise<string> {
   });
 }
 
-/** Extract the output of a completed agent (stdout logs preferred, summary fallback) */
+/** Extract the output of a completed agent (summary preferred for clean output) */
 function extractAgentOutput(agentId: string): string {
-  // Prefer actual stdout logs — they contain the agent's real output
+  // Prefer summary — it's the clean, post-processed output without TUI noise
+  const summary = getAgentSummary(agentId) as { summary?: string } | undefined;
+  if (summary?.summary) return summary.summary;
+
+  // Fall back to stdout logs with aggressive TUI noise filtering
   const logs = getLogsForAgent(agentId, 500);
   const stdoutLines = logs
     .filter((l: any) => l.stream === 'stdout')
     .map((l: any) => l.content)
     .filter((line: string) => {
-      // Filter out TUI noise: single chars, spinners, status fragments
       const trimmed = line.trim();
-      return trimmed.length > 3 && !/^[✻✶✳⎿│─┃┗┛┓┏▸▹●○◉◎⚡↓↑→←…]+$/.test(trimmed);
+      if (trimmed.length < 4) return false;
+      // Filter TUI: spinners, box drawing, progress indicators
+      if (/^[✻✶✳⎿│─┃┗┛┓┏▸▹●○◉◎⚡↓↑→←…╭╮╰╯▘▝▗▖\s]+$/.test(trimmed)) return false;
+      // Filter spinner text
+      if (/^(Transfiguring|Crafting|Thinking|Loading|Compiling)…?\.{0,3}$/.test(trimmed)) return false;
+      // Filter Claude Code header/box lines
+      if (/^(Claude Code|Haiku|Sonnet|Opus|claude-|▲|✓|⚠)/.test(trimmed)) return false;
+      if (/^(Organization|sashipoluri|~\/)/.test(trimmed)) return false;
+      // Filter short fragments (2-char noise from TUI streaming)
+      if (trimmed.length <= 5 && !/[a-zA-Z]{3,}/.test(trimmed)) return false;
+      return true;
     })
     .slice(-50);
 
   if (stdoutLines.length > 0) {
     return stdoutLines.join('\n').slice(-4000);
   }
-
-  // Fall back to summary
-  const summary = getAgentSummary(agentId) as { summary?: string } | undefined;
-  if (summary?.summary) return summary.summary;
 
   return '';
 }

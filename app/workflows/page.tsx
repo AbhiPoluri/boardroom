@@ -178,6 +178,8 @@ export default function WorkflowsPage() {
   }
   const [activeRuns, setActiveRuns] = useState<WorkflowRun[]>([]);
   const [viewingRun, setViewingRun] = useState<string | null>(null);
+  const [viewedRunData, setViewedRunData] = useState<WorkflowRun | null>(null);
+  const [viewedRunSteps, setViewedRunSteps] = useState<WorkflowStep[]>([]);
 
   // Run history from DB
   interface HistoryRun {
@@ -244,6 +246,41 @@ export default function WorkflowsPage() {
     return () => { clearInterval(iv); clearInterval(hv); };
   }, []);
 
+  // Poll viewed run status (faster 3s interval for live canvas)
+  useEffect(() => {
+    if (!viewingRun) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/workflows?runId=${viewingRun}`);
+        const data = await res.json();
+        if (data.run) {
+          setViewedRunData({
+            runId: viewingRun,
+            workflowName: data.run.workflowName,
+            status: data.run.status,
+            agents: data.run.agents || [],
+          });
+          // Also update in activeRuns list
+          setActiveRuns(prev => prev.map(r => r.runId === viewingRun ? { ...r, ...data.run } : r));
+        }
+      } catch {}
+    };
+    poll();
+    const iv = setInterval(poll, 3000);
+    return () => clearInterval(iv);
+  }, [viewingRun]);
+
+  const handleCancelRun = async () => {
+    if (!viewingRun) return;
+    try {
+      await fetch('/api/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', runId: viewingRun }),
+      });
+    } catch {}
+  };
+
   const selectWorkflow = (wf: WorkflowDef) => {
     isDirty.current = false;
     setCurrentDraftId(null);
@@ -256,6 +293,7 @@ export default function WorkflowsPage() {
     setEdCronEnabled(!!wf.cron_enabled);
     setIsNew(false);
     setViewingRun(null);
+    setViewedRunData(null);
     setError('');
     setSuccess('');
   };
@@ -264,6 +302,13 @@ export default function WorkflowsPage() {
     setViewingRun(runId);
     setSelected(null);
     setIsNew(false);
+    // Find matching run + workflow steps
+    const run = activeRuns.find(r => r.runId === runId);
+    if (run) {
+      setViewedRunData(run);
+      const wf = workflows.find(w => w.name === run.workflowName);
+      if (wf) setViewedRunSteps(wf.steps);
+    }
   };
 
   const startNew = () => {
@@ -272,6 +317,7 @@ export default function WorkflowsPage() {
     setActiveDraftId(newDraftId);
     setSelected(null);
     setViewingRun(null);
+    setViewedRunData(null);
     setEdName('');
     setEdDesc('');
     setEdSteps([{ name: 'step-1', type: 'claude', model: 'sonnet', task: '', parallel: false }]);
@@ -366,6 +412,15 @@ export default function WorkflowsPage() {
       if (data.runId) {
         setRunId(data.runId);
         setRunAgents(data.agents || []);
+        // Switch to canvas run viewer
+        setViewingRun(data.runId);
+        setViewedRunSteps(edSteps);
+        setViewedRunData({
+          runId: data.runId,
+          workflowName: edName,
+          status: 'running',
+          agents: data.agents || [],
+        });
         setSuccess(`running — ${data.agents?.length || 0} agent(s) spawned`);
       } else {
         setError(data.error || 'failed to start');
@@ -378,7 +433,7 @@ export default function WorkflowsPage() {
   };
 
   const hasEditor = isNew || selected;
-  const viewedRun = activeRuns.find(r => r.runId === viewingRun);
+  const viewedRun = viewedRunData || activeRuns.find(r => r.runId === viewingRun) || null;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -629,104 +684,115 @@ export default function WorkflowsPage() {
         {/* Main */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {viewedRun ? (
-            /* Run viewer */
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="max-w-lg mx-auto space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    viewedRun.status === 'running' ? 'bg-blue-500/15'
-                      : viewedRun.status === 'done' ? 'bg-emerald-500/15'
-                      : 'bg-red-500/15'
-                  }`}>
-                    {viewedRun.status === 'running' ? <Activity className="w-4 h-4 text-blue-400 animate-pulse" />
-                      : viewedRun.status === 'done' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      : <XCircle className="w-4 h-4 text-red-400" />}
-                  </div>
-                  <div>
-                    <h2 className="font-mono text-sm text-zinc-100">{viewedRun.workflowName}</h2>
-                    <span className="font-mono text-[10px] text-zinc-600">{viewedRun.runId}</span>
-                  </div>
-                  <Badge variant="outline" className={`ml-auto text-[10px] font-mono ${
-                    viewedRun.status === 'running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/25'
-                      : viewedRun.status === 'done' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
-                      : 'bg-red-500/10 text-red-400 border-red-500/25'
-                  }`}>
-                    {viewedRun.status}
-                  </Badge>
+            /* Run viewer — canvas + progress bar */
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Compact run header */}
+              <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-950/50">
+                <div className={`w-6 h-6 rounded-md flex items-center justify-center ${
+                  viewedRun.status === 'running' ? 'bg-blue-500/15'
+                    : viewedRun.status === 'done' ? 'bg-emerald-500/15'
+                    : 'bg-red-500/15'
+                }`}>
+                  {viewedRun.status === 'running' ? <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                    : viewedRun.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                </div>
+                <span className="font-mono text-[10px] text-zinc-600">{viewedRun.runId}</span>
+
+                {/* Progress bar */}
+                <div className="flex-1 max-w-[200px] h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      viewedRun.status === 'error' ? 'bg-red-500' : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${viewedRun.agents.length > 0 ? (viewedRun.agents.filter(a => a.status === 'done').length / viewedRun.agents.length) * 100 : 0}%` }}
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-zinc-500">
+                  {viewedRun.agents.filter(a => a.status === 'done').length}/{viewedRun.agents.length}
+                </span>
+
+                {/* Step status pills */}
+                <div className="flex items-center gap-1 ml-2">
+                  {viewedRun.agents.map((a) => (
+                    <div
+                      key={a.agentId}
+                      title={`${a.stepName}: ${a.status}`}
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        a.status === 'done' ? 'bg-emerald-400'
+                          : a.status === 'running' ? 'bg-blue-400 animate-pulse'
+                          : a.status === 'error' || a.status === 'killed' ? 'bg-red-400'
+                          : 'bg-zinc-600'
+                      }`}
+                    />
+                  ))}
                 </div>
 
-                <Separator className="bg-zinc-800" />
+                <div className="ml-auto flex items-center gap-2">
+                  {viewedRun.status === 'running' && (
+                    <Button
+                      onClick={handleCancelRun}
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px] font-mono text-red-400/70 hover:text-red-400 hover:bg-red-500/10"
+                    >
+                      <XCircle className="w-3 h-3 mr-1" /> cancel
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => { setViewingRun(null); setViewedRunData(null); }}
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-zinc-600 hover:text-zinc-400"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">steps</span>
-                    <Badge variant="outline" className="text-[9px] font-mono">
-                      {viewedRun.agents.filter(a => a.status === 'done').length}/{viewedRun.agents.length} complete
-                    </Badge>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="w-full h-1.5 bg-zinc-800 rounded-full mb-4 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        viewedRun.status === 'error' ? 'bg-red-500' : 'bg-emerald-500'
-                      }`}
-                      style={{ width: `${viewedRun.agents.length > 0 ? (viewedRun.agents.filter(a => a.status === 'done').length / viewedRun.agents.length) * 100 : 0}%` }}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
+              {/* Canvas with live run status */}
+              {viewedRunSteps.length > 0 ? (
+                <WorkflowCanvas
+                  steps={viewedRunSteps}
+                  onChange={() => {}} // read-only
+                  isRunning={viewedRun.status === 'running'}
+                  runAgents={viewedRun.agents}
+                />
+              ) : (
+                /* Fallback: step list when no canvas layout available */
+                <div className="flex-1 overflow-y-auto p-5">
+                  <div className="max-w-lg mx-auto space-y-2">
                     {viewedRun.agents.map((a, i) => {
-                      // Try to find step info from the workflow
                       const wf = workflows.find(w => w.name === viewedRun.workflowName);
                       const step = wf?.steps[i];
                       return (
-                      <a key={a.agentId} href={`/agents/${a.agentId}`} className="block group">
-                        <Card className="bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 transition-colors">
-                          <CardContent className="py-3 px-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-mono font-bold ${
-                                a.status === 'done' ? 'bg-emerald-400 text-zinc-950'
-                                  : a.status === 'error' || a.status === 'killed' ? 'bg-red-400 text-zinc-950'
-                                  : a.status === 'running' ? 'bg-blue-400 text-zinc-950'
-                                  : 'bg-zinc-700 text-zinc-300'
-                              }`}>
-                                {i + 1}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <span className="font-mono text-xs text-zinc-200 block truncate">{a.stepName}</span>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="font-mono text-[10px] text-zinc-600">{a.agentId.slice(0, 8)}</span>
-                                  {step && (
-                                    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{step.type} / {step.model || 'sonnet'}</span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {a.status === 'running' && (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                                )}
-                                <Badge variant="outline" className={`text-[9px] font-mono ${
-                                  a.status === 'done' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
-                                    : a.status === 'error' || a.status === 'killed' ? 'bg-red-500/10 text-red-400 border-red-500/25'
-                                    : a.status === 'running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/25'
-                                    : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/25'
-                                }`}>
-                                  {a.status}
-                                </Badge>
-                              </div>
-                            </div>
-                            {step && (
-                              <div className="mt-2 pl-8 text-[10px] font-mono text-zinc-500 line-clamp-2">{step.task}</div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      </a>
+                        <div key={a.agentId} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-mono font-bold ${
+                            a.status === 'done' ? 'bg-emerald-400 text-zinc-950'
+                              : a.status === 'error' || a.status === 'killed' ? 'bg-red-400 text-zinc-950'
+                              : a.status === 'running' ? 'bg-blue-400 text-zinc-950'
+                              : 'bg-zinc-700 text-zinc-300'
+                          }`}>
+                            {i + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-mono text-xs text-zinc-200 truncate block">{a.stepName}</span>
+                            <span className="font-mono text-[10px] text-zinc-600">{a.agentId.slice(0, 8)}{step ? ` · ${step.type}/${step.model || 'sonnet'}` : ''}</span>
+                          </div>
+                          <Badge variant="outline" className={`text-[9px] font-mono ${
+                            a.status === 'done' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                              : a.status === 'error' || a.status === 'killed' ? 'bg-red-500/10 text-red-400 border-red-500/25'
+                              : a.status === 'running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/25'
+                              : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/25'
+                          }`}>
+                            {a.status}
+                          </Badge>
+                        </div>
                       );
                     })}
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : !hasEditor ? (
             /* Empty state */
