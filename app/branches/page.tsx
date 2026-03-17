@@ -152,15 +152,17 @@ export default function BranchesPage() {
   const [showDiff, setShowDiff] = useState(false);
   const [merging, setMerging] = useState(false);
   const [mergeResult, setMergeResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [error, setError] = useState('');
 
   const fetchBranches = useCallback(() => {
+    setError('');
     fetch('/api/branches')
       .then((r) => r.json())
       .then((data) => {
         setBranches(data.branches || []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { setError('Failed to load branches'); setLoading(false); });
   }, []);
 
   useEffect(() => {
@@ -268,12 +270,18 @@ export default function BranchesPage() {
         </Button>
       </div>
 
+      {error && (
+        <div className="mx-4 mt-2 px-4 py-3 bg-red-950/30 border border-red-900 rounded-lg text-sm text-red-400 font-mono">
+          {error}
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar — branch list */}
         <div className="w-[240px] flex-shrink-0 border-r border-zinc-800 overflow-y-auto">
           <div className="p-2 space-y-1">
             {loading ? (
-              <div className="p-4 text-xs font-mono text-zinc-700">loading...</div>
+              <div className="p-4 text-xs font-mono text-zinc-700 animate-pulse text-center">loading...</div>
             ) : branches.length === 0 ? (
               <div className="py-8 text-center">
                 <GitBranch className="w-6 h-6 text-zinc-800 mx-auto mb-2" />

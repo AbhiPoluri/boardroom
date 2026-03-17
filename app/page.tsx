@@ -218,13 +218,15 @@ export default function Dashboard() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950 text-zinc-100">
         {/* Header */}
-        <header className="flex-shrink-0 flex items-center justify-between px-6 py-2 border-b border-zinc-800 bg-zinc-900/40">
+        <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
           <div className="flex items-center gap-3">
-            <h1 className="font-mono text-sm font-semibold text-zinc-100 tracking-tight">agent fleet</h1>
+            <h1 className="font-mono text-sm text-zinc-100">agent fleet</h1>
             <span
               className={`inline-block h-2 w-2 rounded-full ${
                 hasActive ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-700'
               }`}
+              title={hasActive ? 'Agents active' : 'No active agents'}
+              role="status"
             />
             <div className="flex items-center gap-3 text-[11px] font-mono">
               <span className={stats.active > 0 ? 'text-emerald-400' : 'text-zinc-600'}>
@@ -303,6 +305,7 @@ export default function Dashboard() {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
+                aria-pressed={filter === f}
                 className={`px-3 py-1 rounded-full text-xs font-mono transition-colors ${
                   filter === f
                     ? 'bg-emerald-600 text-white'

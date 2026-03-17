@@ -63,9 +63,11 @@ export default function CostsPage() {
   const [cache, setCache] = useState<CacheInfo>({ read_tokens: 0, write_tokens: 0, hit_rate: 0, savings_usd: 0 });
   const [timeFilter, setTimeFilter] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     setLoading(true);
+    setError('');
     const sinceParam = timeFilter > 0 ? `?since=${Date.now() - timeFilter}` : '';
     Promise.all([
       fetch(`/api/tokens${sinceParam}`).then(r => r.json()),
@@ -91,7 +93,7 @@ export default function CostsPage() {
       }));
       setPerAgent(entries);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(() => { setError('Failed to load cost data'); setLoading(false); });
   }, [timeFilter]);
 
   const enriched = perAgent.map(e => {
@@ -143,14 +145,19 @@ export default function CostsPage() {
 
       <div className="flex-1 overflow-y-auto p-6">
         {loading ? (
-          <div className="text-xs font-mono text-zinc-600">loading cost data...</div>
+          <div className="text-xs font-mono text-zinc-600 animate-pulse text-center">loading cost data...</div>
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
+            {error && (
+              <div className="mb-4 px-4 py-3 bg-red-950/30 border border-red-900 rounded-lg text-sm text-red-400 font-mono">
+                {error}
+              </div>
+            )}
             {/* Model Breakdown */}
             {modelBreakdown.length > 0 && (
               <div>
                 <h2 className="font-mono text-xs text-zinc-500 uppercase tracking-wider mb-3">cost by model</h2>
-                <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                   {modelBreakdown.map(m => {
                     const displayName = normalizeModelName(m.model);
                     const color = MODEL_COLORS[displayName] || '#6b7280';
@@ -209,7 +216,7 @@ export default function CostsPage() {
             {(cache.read_tokens > 0 || cache.write_tokens > 0) && (
               <div>
                 <h2 className="font-mono text-xs text-zinc-500 uppercase tracking-wider mb-3">cache performance</h2>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-950">
                     <div className="text-[10px] font-mono text-zinc-600">cache hit rate</div>
                     <div className="text-lg font-mono font-bold text-amber-400">

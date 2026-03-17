@@ -343,7 +343,7 @@ export default function ConfigsPage() {
       />
 
       {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
           <h1 className="font-mono text-sm text-zinc-100">agent configs</h1>
           <span className="text-[10px] font-mono text-zinc-600">agents/*.md</span>
@@ -372,7 +372,7 @@ export default function ConfigsPage() {
         {/* Sidebar — config list */}
         <div className="w-[240px] flex-shrink-0 border-r border-zinc-800 overflow-y-auto bg-zinc-950/50">
           {loading ? (
-            <div className="p-4 text-xs font-mono text-zinc-700">loading...</div>
+            <div className="p-4 text-xs font-mono text-zinc-700 animate-pulse text-center">loading...</div>
           ) : configs.length === 0 ? (
             <div className="p-4 text-xs font-mono text-zinc-700">
               no configs found<br />

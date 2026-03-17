@@ -6,6 +6,14 @@ import { Plus, X, Trash2, Terminal, LayoutGrid, ExternalLink, RotateCcw } from '
 import { GitBadge } from '@/components/GitPanel';
 import type { Agent } from '@/types';
 
+function stripAnsi(str: string): string {
+  return str
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\x1b[()][AB012]/g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+}
+
 interface TokenInfo {
   input_tokens: number;
   output_tokens: number;
@@ -259,7 +267,7 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
             ) : (
               logs.slice(-8).map((log, i) => (
                 <div key={log.id} className={`truncate leading-relaxed ${i === logs.slice(-8).length - 1 ? 'text-zinc-400' : ''}`}>
-                  {log.content}
+                  {stripAnsi(log.content)}
                 </div>
               ))
             )}

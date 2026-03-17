@@ -154,15 +154,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
               const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
               return (
-                <Link key={href} href={href}>
-                  <button className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors ${
+                <Link
+                  key={href}
+                  href={href}
+                  aria-label={label}
+                  className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors ${
                     active
                       ? 'bg-zinc-800 text-zinc-100'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
-                  }`}>
+                  }`}
+                >
                     <Icon className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">{label}</span>
-                  </button>
                 </Link>
               );
             })}
