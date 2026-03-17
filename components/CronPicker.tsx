@@ -126,6 +126,9 @@ export default function CronPicker({ value, onChange, className }: CronPickerPro
   const [state, setState] = useState<BuilderState>(() => stateFromExpr(value, detectMode(value)));
   const [showRaw, setShowRaw] = useState(false);
   const [rawInput, setRawInput] = useState(value);
+  // Free-text buffers for interval inputs — committed on blur
+  const [minuteText, setMinuteText] = useState(() => String(stateFromExpr(value, detectMode(value)).minuteInterval));
+  const [hourText, setHourText] = useState(() => String(stateFromExpr(value, detectMode(value)).hourInterval));
 
   // Sync rawInput when value changes externally
   useEffect(() => { setRawInput(value); }, [value]);
@@ -180,8 +183,12 @@ export default function CronPicker({ value, onChange, className }: CronPickerPro
             type="button"
             onClick={() => {
               onChange(p.value);
-              setMode(detectMode(p.value));
-              setState(stateFromExpr(p.value, detectMode(p.value)));
+              const m = detectMode(p.value);
+              const s = stateFromExpr(p.value, m);
+              setMode(m);
+              setState(s);
+              setMinuteText(String(s.minuteInterval));
+              setHourText(String(s.hourInterval));
             }}
             className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
               value === p.value
@@ -220,12 +227,13 @@ export default function CronPicker({ value, onChange, className }: CronPickerPro
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 font-mono">every</span>
             <input
-              type="number"
-              min={1}
-              max={59}
-              value={state.minuteInterval}
-              onChange={e => {
-                const n = Math.max(1, Math.min(59, parseInt(e.target.value) || 1));
+              type="text"
+              inputMode="numeric"
+              value={minuteText}
+              onChange={e => setMinuteText(e.target.value.replace(/\D/g, ''))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(59, parseInt(minuteText) || 1));
+                setMinuteText(String(n));
                 setStateAndEmit({ minuteInterval: n });
               }}
               className="w-16 h-8 text-sm font-mono text-center bg-zinc-950 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-700 focus:outline-none"
@@ -239,17 +247,18 @@ export default function CronPicker({ value, onChange, className }: CronPickerPro
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 font-mono">every</span>
             <input
-              type="number"
-              min={1}
-              max={23}
-              value={state.hourInterval}
-              onChange={e => {
-                const n = Math.max(1, Math.min(23, parseInt(e.target.value) || 1));
+              type="text"
+              inputMode="numeric"
+              value={hourText}
+              onChange={e => setHourText(e.target.value.replace(/\D/g, ''))}
+              onBlur={() => {
+                const n = Math.max(1, Math.min(23, parseInt(hourText) || 1));
+                setHourText(String(n));
                 setStateAndEmit({ hourInterval: n });
               }}
               className="w-16 h-8 text-sm font-mono text-center bg-zinc-950 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-700 focus:outline-none"
             />
-            <span className="text-xs text-zinc-400 font-mono">hour{state.hourInterval !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-zinc-400 font-mono">hour{parseInt(hourText) !== 1 ? 's' : ''}</span>
           </div>
         )}
 
