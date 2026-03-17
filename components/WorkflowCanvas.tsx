@@ -22,6 +22,7 @@ interface CanvasProps {
   onChange: (steps: WorkflowStep[]) => void;
   isRunning?: boolean;
   runAgents?: Array<{ stepName: string; agentId: string; status: string }>;
+  stepOutputs?: Record<string, string>;
 }
 
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
@@ -150,7 +151,7 @@ function bezierMidpoint(x1: number, y1: number, cx1: number, cy1: number, cx2: n
   };
 }
 
-export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }: CanvasProps) {
+export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, stepOutputs }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasFocusRef = useRef<HTMLDivElement>(null);
@@ -163,6 +164,9 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [connecting, setConnecting] = useState<{ fromIdx: number; mouse: { x: number; y: number } } | null>(null);
+
+  // Output viewer
+  const [viewingOutput, setViewingOutput] = useState<string | null>(null);
 
   // Zoom
   const [zoom, setZoom] = useState(1);
@@ -788,6 +792,11 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
             const isSelected = selectedIds.has(idx);
             const isDragging = dragIdx === idx;
             const runStatus = getRunStatus(step.name);
+            const isActive = runStatus?.status === 'running';
+            const isDone = runStatus?.status === 'done';
+            const isFailed = runStatus?.status === 'error' || runStatus?.status === 'killed';
+            const hasOutput = stepOutputs && stepOutputs[step.name];
+            const showingOutput = viewingOutput === step.name;
 
             return (
               <div
@@ -820,13 +829,22 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                 {/* Node card */}
                 <div
                   className={`w-full h-full rounded-lg border font-mono cursor-grab active:cursor-grabbing transition-all overflow-hidden ${
-                    isSelected
+                    isActive
+                      ? 'ring-2 ring-emerald-400/60 border-emerald-400/50 shadow-[0_0_20px_rgba(52,211,153,0.15)]'
+                      : isDone
+                      ? 'border-emerald-500/30'
+                      : isFailed
+                      ? 'ring-1 ring-red-500/40 border-red-500/30'
+                      : isSelected
                       ? 'ring-2 ring-emerald-500/50 border-emerald-500/40'
                       : isDragging
                       ? 'opacity-80 border-zinc-600 shadow-xl'
                       : 'border-zinc-700 hover:border-zinc-600'
                   }`}
-                  style={{ backgroundColor: '#18181b', borderColor: isSelected ? undefined : colors.border }}
+                  style={{
+                    backgroundColor: isActive ? '#0c1f17' : isDone ? '#111a14' : isFailed ? '#1a1111' : '#18181b',
+                    borderColor: isActive ? undefined : isDone ? undefined : isFailed ? undefined : isSelected ? undefined : colors.border,
+                  }}
                   onMouseDown={(e) => handleNodeMouseDown(idx, e)}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -885,20 +903,40 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents }
                     )}
                     {runStatus && (
                       <span className={`text-[9px] px-1.5 py-0.5 rounded ml-auto ${
-                        runStatus.status === 'done' ? 'bg-emerald-500/15 text-emerald-400'
-                          : runStatus.status === 'error' || runStatus.status === 'killed' ? 'bg-red-500/15 text-red-400'
+                        isActive ? 'bg-emerald-500/15 text-emerald-400 animate-pulse'
+                          : isDone ? 'bg-emerald-500/15 text-emerald-400'
+                          : isFailed ? 'bg-red-500/15 text-red-400'
                           : 'bg-blue-500/15 text-blue-400'
                       }`}>
-                        {runStatus.status}
+                        {isActive ? 'active' : runStatus.status}
                       </span>
+                    )}
+                    {hasOutput && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setViewingOutput(showingOutput ? null : step.name); }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded transition-colors ${
+                          showingOutput
+                            ? 'bg-zinc-700 text-zinc-200'
+                            : 'bg-zinc-800/60 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700'
+                        }`}
+                        title="View output"
+                      >
+                        output
+                      </button>
                     )}
                   </div>
 
-                  {/* Task preview */}
+                  {/* Task preview or output */}
                   <div className="px-3 pb-2">
-                    <p className="text-[10px] text-zinc-500 leading-tight line-clamp-2">
-                      {step.task || 'no task defined'}
-                    </p>
+                    {showingOutput && hasOutput ? (
+                      <pre className="text-[9px] text-emerald-400/80 leading-tight whitespace-pre-wrap break-words max-h-[60px] overflow-y-auto font-mono bg-zinc-950/60 rounded p-1.5 -mx-0.5">
+                        {stepOutputs![step.name].slice(0, 500)}
+                      </pre>
+                    ) : (
+                      <p className="text-[10px] text-zinc-500 leading-tight line-clamp-2">
+                        {step.task || 'no task defined'}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

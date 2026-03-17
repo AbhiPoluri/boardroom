@@ -175,6 +175,7 @@ export default function WorkflowsPage() {
     workflowName: string;
     status: 'running' | 'done' | 'error';
     agents: Array<{ stepName: string; agentId: string; status: string }>;
+    stepOutputs?: Record<string, string>;
   }
   const [activeRuns, setActiveRuns] = useState<WorkflowRun[]>([]);
   const [viewingRun, setViewingRun] = useState<string | null>(null);
@@ -259,6 +260,7 @@ export default function WorkflowsPage() {
             workflowName: data.run.workflowName,
             status: data.run.status,
             agents: data.run.agents || [],
+            stepOutputs: data.run.stepOutputs || {},
           });
           // Also update in activeRuns list
           setActiveRuns(prev => prev.map(r => r.runId === viewingRun ? { ...r, ...data.run } : r));
@@ -756,6 +758,7 @@ export default function WorkflowsPage() {
                   steps={viewedRunSteps}
                   onChange={() => {}} // read-only
                   isRunning={viewedRun.status === 'running'}
+                  stepOutputs={viewedRun.stepOutputs}
                   runAgents={viewedRun.agents}
                 />
               ) : (

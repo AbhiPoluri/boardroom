@@ -39,6 +39,8 @@ const activeRuns = new Map<string, {
   stepOutputs: Record<string, string>;
   /** Steps skipped by router decisions */
   skippedSteps: Set<string>;
+  /** When the run finished (for auto-cleanup) */
+  finishedAt?: number;
 }>();
 
 export function getWorkflowRun(runId: string) {
@@ -54,11 +56,19 @@ export function cancelWorkflow(runId: string): boolean {
   const run = activeRuns.get(runId);
   if (!run || run.status !== 'running') return false;
   run.status = 'error';
+  run.finishedAt = Date.now();
   updateWorkflowRun(runId, 'error', 'Cancelled by user');
   return true;
 }
 
 export function getAllWorkflowRuns() {
+  // Purge completed runs older than 60s from in-memory map
+  const now = Date.now();
+  for (const [runId, run] of activeRuns) {
+    if (run.status !== 'running' && run.finishedAt && now - run.finishedAt > 60_000) {
+      activeRuns.delete(runId);
+    }
+  }
   const runs: Array<{ runId: string; workflowName: string; status: string; agents: any[] }> = [];
   for (const [runId, run] of activeRuns) {
     runs.push({ runId, workflowName: run.workflowName, status: run.status, agents: run.agents });
@@ -292,6 +302,7 @@ export async function runWorkflow(
     status: 'running' as 'running' | 'done' | 'error',
     stepOutputs: {} as Record<string, string>,
     skippedSteps: new Set<string>(),
+    finishedAt: undefined as number | undefined,
   };
   activeRuns.set(runId, run);
   createWorkflowRun(runId, workflowName, []);
@@ -481,11 +492,13 @@ export async function runWorkflow(
       }
 
       run.status = 'done';
+      run.finishedAt = Date.now();
       activeRuns.set(runId, run);
       updateWorkflowRun(runId, 'done');
     } catch (err) {
       console.error(`[workflow] Run ${runId} error:`, err);
       run.status = 'error';
+      run.finishedAt = Date.now();
       activeRuns.set(runId, run);
       updateWorkflowRun(runId, 'error', err instanceof Error ? err.message : 'Unknown error');
     }
