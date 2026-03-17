@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getAllWorkflows, saveWorkflow, getWorkflow, deleteWorkflow } from '@/lib/db';
-import { runWorkflow, getWorkflowRun, getAllWorkflowRuns } from '@/lib/workflow-runner';
+import { runWorkflow, getWorkflowRun, getAllWorkflowRuns, cancelWorkflow } from '@/lib/workflow-runner';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,8 +40,20 @@ export async function POST(req: NextRequest) {
     if (!steps || !Array.isArray(steps) || steps.length === 0) {
       return NextResponse.json({ error: 'steps[] required to run' }, { status: 400 });
     }
-    const result = await runWorkflow(name || 'unnamed', steps, repo);
-    return NextResponse.json({ ok: true, ...result });
+    try {
+      const result = await runWorkflow(name || 'unnamed', steps, repo);
+      return NextResponse.json({ ok: true, ...result });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to run' }, { status: 429 });
+    }
+  }
+
+  // POST with action=cancel — stop a running workflow
+  if (body.action === 'cancel') {
+    const { runId } = body;
+    if (!runId) return NextResponse.json({ error: 'runId required' }, { status: 400 });
+    const ok = cancelWorkflow(runId);
+    return NextResponse.json({ ok, cancelled: ok });
   }
 
   // Default: create workflow

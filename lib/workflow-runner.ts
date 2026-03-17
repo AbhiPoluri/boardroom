@@ -24,6 +24,10 @@ export interface WorkflowRunResult {
   agents: Array<{ stepName: string; agentId: string; status: string }>;
 }
 
+// Safety limits
+const MAX_AGENTS_PER_RUN = 15;
+const MAX_CONCURRENT_RUNS = 3;
+
 // In-memory run tracking
 const activeRuns = new Map<string, {
   workflowName: string;
@@ -44,6 +48,14 @@ export function getWorkflowRun(runId: string) {
     ...run,
     skippedSteps: Array.from(run.skippedSteps),
   };
+}
+
+export function cancelWorkflow(runId: string): boolean {
+  const run = activeRuns.get(runId);
+  if (!run || run.status !== 'running') return false;
+  run.status = 'error';
+  updateWorkflowRun(runId, 'error', 'Cancelled by user');
+  return true;
 }
 
 export function getAllWorkflowRuns() {
@@ -248,6 +260,19 @@ export async function runWorkflow(
   steps: WorkflowStep[],
   repo?: string,
 ): Promise<WorkflowRunResult> {
+  // Guard: max concurrent runs
+  const runningCount = [...activeRuns.values()].filter(r => r.status === 'running').length;
+  if (runningCount >= MAX_CONCURRENT_RUNS) {
+    throw new Error(`Too many concurrent workflow runs (${runningCount}/${MAX_CONCURRENT_RUNS}). Wait for one to finish.`);
+  }
+
+  // Guard: prevent re-running the same workflow if it's already active
+  for (const [, r] of activeRuns) {
+    if (r.workflowName === workflowName && r.status === 'running') {
+      throw new Error(`Workflow "${workflowName}" is already running. Wait for it to finish or cancel it.`);
+    }
+  }
+
   const runId = uuidv4().slice(0, 12);
 
   const run = {
@@ -300,9 +325,14 @@ export async function runWorkflow(
         // Remove ready steps from pending
         for (const s of ready) pending.delete(s.name);
 
-        // Spawn all ready steps in parallel
+        // Spawn all ready steps in parallel (with safety cap)
         const batch: Array<{ step: WorkflowStep; agentId: string }> = [];
         for (const step of ready) {
+          if (run.agents.length >= MAX_AGENTS_PER_RUN) {
+            run.status = 'error';
+            updateWorkflowRun(runId, 'error', `Agent limit reached (${MAX_AGENTS_PER_RUN}). Workflow stopped to prevent runaway.`);
+            return;
+          }
           const idx = steps.indexOf(step);
           run.currentStepIdx = idx;
 
@@ -360,6 +390,12 @@ export async function runWorkflow(
                 let passed = false;
 
                 while (retries < maxRetries && !passed) {
+                  if (run.agents.length >= MAX_AGENTS_PER_RUN) {
+                    insertLog(agentId, 'system', `Agent limit (${MAX_AGENTS_PER_RUN}) reached during eval retries — stopping`);
+                    run.status = 'error';
+                    updateWorkflowRun(runId, 'error', `Agent limit reached during evaluator retries`);
+                    return;
+                  }
                   retries++;
                   insertLog(agentId, 'system', `Evaluator: FAIL — retrying "${targetName}" (attempt ${retries}/${maxRetries})`);
 
