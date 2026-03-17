@@ -1,24 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Plus, Trash2, Play, Save, GripVertical,
-  MoreHorizontal, Copy, ArrowUp, ArrowDown, GitBranch, Workflow,
-  ChevronDown, Zap, Activity, CheckCircle2, XCircle, Eye,
+  Plus, Trash2, Play, Save, Workflow,
+  Zap, Activity, CheckCircle2, XCircle, Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import CronPicker from '@/components/CronPicker';
+import WorkflowCanvas from '@/components/WorkflowCanvas';
 import { describeCron } from '@/lib/cron-utils';
 import type { AgentType } from '@/types';
 
@@ -40,8 +33,6 @@ interface WorkflowDef {
   cron_enabled?: number;
 }
 
-const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'custom', 'test'];
-
 const TYPE_THEME: Record<string, { dot: string; badge: string; ring: string; label: string }> = {
   claude: { dot: 'bg-blue-400', badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20', ring: 'ring-blue-500/20', label: 'text-blue-400' },
   codex: { dot: 'bg-amber-400', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20', ring: 'ring-amber-500/20', label: 'text-amber-400' },
@@ -49,28 +40,6 @@ const TYPE_THEME: Record<string, { dot: string; badge: string; ring: string; lab
   test: { dot: 'bg-emerald-400', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', ring: 'ring-emerald-500/20', label: 'text-emerald-400' },
 };
 
-function PipelineConnector({ parallel }: { parallel: boolean }) {
-  if (parallel) {
-    return (
-      <div className="flex flex-col items-center py-2">
-        <div className="w-px h-2 bg-amber-500/30" />
-        <Badge variant="outline" className="text-[10px] font-mono bg-amber-500/10 text-amber-400 border-amber-500/25 px-2.5 py-0.5">
-          <GitBranch className="w-2.5 h-2.5 mr-1" />
-          parallel
-        </Badge>
-        <div className="w-px h-2 bg-amber-500/30" />
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col items-center py-1.5">
-      <svg width="2" height="20" className="text-zinc-700">
-        <line x1="1" y1="0" x2="1" y2="20" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
-      </svg>
-      <ChevronDown className="w-4 h-4 text-zinc-600 -my-1" />
-    </div>
-  );
-}
 
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowDef[]>([]);
@@ -88,9 +57,6 @@ export default function WorkflowsPage() {
   const [edCronEnabled, setEdCronEnabled] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dropIdx, setDropIdx] = useState<number | null>(null);
-  const dragStartY = useRef(0);
 
   // Active runs state
   interface WorkflowRun {
@@ -177,48 +143,6 @@ export default function WorkflowsPage() {
 
   const removeStep = (idx: number) => setEdSteps(prev => prev.filter((_, i) => i !== idx));
 
-  const duplicateStep = (idx: number) => {
-    setEdSteps(prev => {
-      const clone = { ...prev[idx], name: `${prev[idx].name}-copy` };
-      const next = [...prev];
-      next.splice(idx + 1, 0, clone);
-      return next;
-    });
-  };
-
-  const moveStep = (from: number, to: number) => {
-    if (to < 0 || to >= edSteps.length) return;
-    setEdSteps(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
-  };
-
-  const updateStep = (idx: number, field: keyof WorkflowStep, value: unknown) => {
-    setEdSteps(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s));
-  };
-
-  const handleDragStart = useCallback((idx: number, e: React.MouseEvent) => {
-    setDragIdx(idx);
-    dragStartY.current = e.clientY;
-    const handleMouseMove = (ev: MouseEvent) => {
-      const delta = ev.clientY - dragStartY.current;
-      const offset = Math.round(delta / 140);
-      const target = Math.max(0, Math.min(edSteps.length - 1, idx + offset));
-      setDropIdx(target !== idx ? target : null);
-    };
-    const handleMouseUp = () => {
-      if (dropIdx !== null && dragIdx !== null) moveStep(dragIdx, dropIdx);
-      setDragIdx(null);
-      setDropIdx(null);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  }, [dragIdx, dropIdx, edSteps.length]);
 
   const handleSave = async () => {
     if (!edName.trim()) { setError('Name required'); return; }
@@ -640,7 +564,7 @@ export default function WorkflowsPage() {
           ) : (
             /* Editor */
             <div className="flex-1 overflow-y-auto p-5">
-              <div className="max-w-lg mx-auto space-y-5">
+              <div className="max-w-3xl mx-auto space-y-5">
                 {/* Name + Desc */}
                 <Card size="sm" className="bg-zinc-900/60 border-zinc-800">
                   <CardContent className="grid grid-cols-2 gap-3">
@@ -665,165 +589,20 @@ export default function WorkflowsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Pipeline header */}
+                {/* Pipeline canvas */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">pipeline</span>
                     <Badge variant="outline" className="text-[9px] font-mono">{edSteps.length} step{edSteps.length !== 1 ? 's' : ''}</Badge>
                   </div>
-                  <Button onClick={addStep} variant="ghost" size="sm" className="font-mono text-[10px] h-6 px-2 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10">
-                    <Plus className="w-3 h-3 mr-1" /> add step
-                  </Button>
                 </div>
 
-                {edSteps.length === 0 ? (
-                  <button
-                    onClick={addStep}
-                    className="w-full py-10 rounded-xl border border-dashed border-zinc-800 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all flex flex-col items-center gap-2 group"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center group-hover:bg-emerald-500/10 transition-colors">
-                      <Plus className="w-5 h-5 text-zinc-700 group-hover:text-emerald-400" />
-                    </div>
-                    <span className="text-xs font-mono text-zinc-700 group-hover:text-emerald-400">add first step</span>
-                  </button>
-                ) : (
-                  <div className="flex flex-col items-center">
-                    {edSteps.map((step, idx) => {
-                      const theme = TYPE_THEME[step.type] || TYPE_THEME.claude;
-                      return (
-                        <div key={idx} className="w-full">
-                          {idx > 0 && <PipelineConnector parallel={step.parallel || false} />}
-
-                          <Card
-                            size="sm"
-                            className={`transition-all ${
-                              dragIdx === idx
-                                ? 'opacity-40 border-zinc-700'
-                                : dropIdx === idx
-                                ? 'ring-2 ring-emerald-500/40 bg-emerald-500/5'
-                                : `bg-zinc-900/60 border-zinc-800 hover:border-zinc-700`
-                            }`}
-                          >
-                            <CardContent className="p-0">
-                              {/* Step header */}
-                              <div className="group flex items-center gap-2 px-3 py-2">
-                                <button
-                                  onMouseDown={(e) => handleDragStart(idx, e)}
-                                  className="cursor-grab active:cursor-grabbing text-zinc-800 hover:text-zinc-500 transition-colors touch-none"
-                                >
-                                  <GripVertical className="w-3.5 h-3.5" />
-                                </button>
-
-                                {/* Numbered badge */}
-                                <div className={`w-5 h-5 rounded-md ${theme.dot} flex items-center justify-center flex-shrink-0 text-[10px] font-mono font-bold text-zinc-950`}>
-                                  {idx + 1}
-                                </div>
-
-                                <Input
-                                  value={step.name}
-                                  onChange={(e) => updateStep(idx, 'name', e.target.value)}
-                                  placeholder="step name"
-                                  className="font-mono text-xs h-7 flex-1 bg-transparent border-none shadow-none text-zinc-200 px-1 focus-visible:ring-1 focus-visible:ring-zinc-600"
-                                />
-
-                                {/* Type */}
-                                <Select value={step.type} onValueChange={(v) => updateStep(idx, 'type', v)}>
-                                  <SelectTrigger className={`w-[85px] h-7 text-[10px] font-mono bg-transparent border-zinc-800/60 ${theme.label} rounded-md`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {AGENT_TYPES.map(t => (
-                                      <SelectItem key={t} value={t} className="text-xs font-mono">
-                                        <span className="flex items-center gap-1.5">
-                                          <span className={`w-1.5 h-1.5 rounded-full ${TYPE_THEME[t]?.dot}`} />
-                                          {t}
-                                        </span>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-
-                                {/* Model */}
-                                <Select value={step.model || 'sonnet'} onValueChange={(v) => updateStep(idx, 'model', v)}>
-                                  <SelectTrigger className="w-[85px] h-7 text-[10px] font-mono bg-transparent border-zinc-800/60 text-zinc-400 rounded-md">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="haiku" className="text-xs font-mono">haiku</SelectItem>
-                                    <SelectItem value="sonnet" className="text-xs font-mono">sonnet</SelectItem>
-                                    <SelectItem value="opus" className="text-xs font-mono">opus</SelectItem>
-                                  </SelectContent>
-                                </Select>
-
-                                {/* Parallel — only show on steps after the first */}
-                                {idx > 0 && (
-                                  <button
-                                    onClick={() => updateStep(idx, 'parallel', !step.parallel)}
-                                    title={step.parallel ? 'Runs in parallel with previous step' : 'Run in parallel with previous step'}
-                                    className={`p-1 rounded-md transition-all ${
-                                      step.parallel
-                                        ? 'text-amber-400 bg-amber-500/15 ring-1 ring-amber-500/30'
-                                        : 'text-zinc-700 hover:text-zinc-500'
-                                    }`}
-                                  >
-                                    <GitBranch className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-
-                                {/* Menu */}
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger className="p-1 rounded text-zinc-700 hover:text-zinc-400 opacity-0 group-hover:opacity-100 transition-all">
-                                    <MoreHorizontal className="w-3.5 h-3.5" />
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-36">
-                                    <DropdownMenuItem onClick={() => moveStep(idx, idx - 1)} disabled={idx === 0} className="text-xs font-mono">
-                                      <ArrowUp className="w-3 h-3 mr-2" /> Move up
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => moveStep(idx, idx + 1)} disabled={idx === edSteps.length - 1} className="text-xs font-mono">
-                                      <ArrowDown className="w-3 h-3 mr-2" /> Move down
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => duplicateStep(idx)} className="text-xs font-mono">
-                                      <Copy className="w-3 h-3 mr-2" /> Duplicate
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => removeStep(idx)} className="text-xs font-mono text-red-400 focus:text-red-400">
-                                      <Trash2 className="w-3 h-3 mr-2" /> Remove
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-
-                              {/* Task */}
-                              <div className="px-3 pb-3">
-                                <Textarea
-                                  value={step.task}
-                                  onChange={(e) => updateStep(idx, 'task', e.target.value)}
-                                  placeholder="What should this step do..."
-                                  className="font-mono text-xs bg-zinc-950/40 border-zinc-800/50 text-zinc-300 resize-none min-h-[44px] placeholder:text-zinc-700 rounded-md"
-                                  rows={2}
-                                />
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </div>
-                      );
-                    })}
-
-                    {/* Add step at bottom */}
-                    <div className="w-full flex flex-col items-center pt-1.5">
-                      <svg width="2" height="16" className="text-zinc-800">
-                        <line x1="1" y1="0" x2="1" y2="16" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
-                      </svg>
-                      <button
-                        onClick={addStep}
-                        className="mt-1 w-full py-3 rounded-xl border border-dashed border-zinc-800 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all flex items-center justify-center gap-1.5 group"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-zinc-700 group-hover:text-emerald-400 transition-colors" />
-                        <span className="text-[11px] font-mono text-zinc-700 group-hover:text-emerald-400 transition-colors">add step</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <WorkflowCanvas
+                  steps={edSteps}
+                  onChange={setEdSteps}
+                  isRunning={running}
+                  runAgents={runAgents}
+                />
 
                 {/* Schedule section */}
                 <Card className="bg-zinc-900/60 border-zinc-800">
