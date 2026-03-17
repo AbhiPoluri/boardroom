@@ -1,7 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
+import os from 'os';
+import path from 'path';
 import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents } from './db';
 import { spawnAgent } from './spawner';
 import type { AgentType } from '@/types';
+
+// Default sandbox repo for workflow agents — keeps test runs out of the main codebase
+const DEFAULT_WORKFLOW_REPO = path.join(os.homedir(), 'boardroom-sandbox');
 
 export interface WorkflowStep {
   name: string;
@@ -291,6 +296,8 @@ export async function runWorkflow(
   steps: WorkflowStep[],
   repo?: string,
 ): Promise<WorkflowRunResult> {
+  // Default to sandbox repo so workflow agents don't pollute the main codebase
+  if (!repo) repo = DEFAULT_WORKFLOW_REPO;
   // Guard: max concurrent runs
   const runningCount = [...activeRuns.values()].filter(r => r.status === 'running').length;
   if (runningCount >= MAX_CONCURRENT_RUNS) {
