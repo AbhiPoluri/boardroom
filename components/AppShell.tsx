@@ -13,7 +13,7 @@ import {
 
 const NAV_ITEMS = [
   { href: '/', icon: Home, label: 'fleet' },
-  { href: '/configs', icon: FileText, label: 'skills' },
+  { href: '/configs', icon: FileText, label: 'agents' },
   { href: '/costs', icon: DollarSign, label: 'costs' },
   { href: '/workflows', icon: Workflow, label: 'workflows' },
   { href: '/branches', icon: GitBranch, label: 'branches' },
