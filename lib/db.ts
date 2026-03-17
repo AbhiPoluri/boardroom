@@ -188,6 +188,23 @@ function initSchema(db: Database.Database): void {
   } catch {
     // Column already exists — ignore
   }
+
+  // Migration: add schedule/cron columns to workflows
+  try {
+    db.exec(`ALTER TABLE workflows ADD COLUMN schedule TEXT`);
+  } catch {
+    // Column already exists — ignore
+  }
+  try {
+    db.exec(`ALTER TABLE workflows ADD COLUMN cron_enabled INTEGER DEFAULT 0`);
+  } catch {
+    // Column already exists — ignore
+  }
+  try {
+    db.exec(`ALTER TABLE workflows ADD COLUMN layout_json TEXT`);
+  } catch {
+    // Column already exists — ignore
+  }
 }
 
 // Agent queries
@@ -471,10 +488,25 @@ export function getAllSummaries() {
 }
 
 // Workflows
-export function saveWorkflow(id: string, name: string, description: string, steps: unknown[]) {
+export function saveWorkflow(
+  id: string,
+  name: string,
+  description: string,
+  steps: unknown[],
+  options?: { schedule?: string | null; cronEnabled?: number; layout?: unknown }
+) {
   const db = getDb();
   const now = Date.now();
-  db.prepare(`INSERT OR REPLACE INTO workflows (id, name, description, steps_json, created_at, updated_at) VALUES (?, ?, ?, ?, COALESCE((SELECT created_at FROM workflows WHERE id = ?), ?), ?)`).run(id, name, description, JSON.stringify(steps), id, now, now);
+  db.prepare(
+    `INSERT OR REPLACE INTO workflows (id, name, description, steps_json, schedule, cron_enabled, layout_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM workflows WHERE id = ?), ?), ?)`
+  ).run(
+    id, name, description, JSON.stringify(steps),
+    options?.schedule ?? null,
+    options?.cronEnabled ?? 0,
+    options?.layout ? JSON.stringify(options.layout) : null,
+    id, now, now
+  );
 }
 
 export function getWorkflow(id: string) {
@@ -490,6 +522,11 @@ export function getAllWorkflows() {
 export function deleteWorkflow(id: string) {
   const db = getDb();
   db.prepare('DELETE FROM workflows WHERE id = ?').run(id);
+}
+
+export function getScheduledWorkflows(): any[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM workflows WHERE cron_enabled = 1 AND schedule IS NOT NULL').all();
 }
 
 // Notifications

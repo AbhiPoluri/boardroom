@@ -1,5 +1,6 @@
-import { getCronJobs, getCronJob, recordCronRun, createAgent } from './db';
+import { getCronJobs, getCronJob, recordCronRun, createAgent, getScheduledWorkflows, getWorkflowRuns } from './db';
 import { spawnAgent } from './spawner';
+import { runWorkflow } from './workflow-runner';
 import { v4 as uuidv4 } from 'uuid';
 import { CronExpressionParser } from 'cron-parser';
 import type { AgentType } from '@/types';
@@ -65,6 +66,7 @@ async function executeCronJob(job: {
 
 function tick() {
   try {
+    // Process cron jobs
     const jobs = getCronJobs();
     for (const job of jobs) {
       if (!job.enabled) continue;
@@ -72,6 +74,35 @@ function tick() {
       if (shouldRun(job.schedule, job.last_run)) {
         executeCronJob(job);
       }
+    }
+
+    // Process scheduled workflows
+    try {
+      const scheduledWorkflows = getScheduledWorkflows();
+      for (const wf of scheduledWorkflows) {
+        if (!wf.schedule) continue;
+
+        // Check if due — find most recent run for this workflow
+        const runs = getWorkflowRuns(wf.id);
+        const latestRun = runs[0]; // already sorted by started_at DESC
+
+        // Skip if latest run is still running
+        if (latestRun && latestRun.status === 'running') continue;
+
+        const lastRunTime = latestRun ? latestRun.started_at : null;
+        if (shouldRun(wf.schedule, lastRunTime)) {
+          let steps: any[] = [];
+          try { steps = JSON.parse(wf.steps_json); } catch { continue; }
+          if (steps.length === 0) continue;
+
+          console.log(`[cron] Triggering scheduled workflow "${wf.name}"`);
+          runWorkflow(wf.name, steps).catch((err) => {
+            console.error(`[cron] Failed to run scheduled workflow "${wf.name}":`, err);
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[cron] Scheduled workflow tick error:', err);
     }
   } catch (err) {
     console.error('[cron] Scheduler tick error:', err);

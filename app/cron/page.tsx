@@ -6,15 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-
-const PRESETS = [
-  { label: 'every 5 min', value: '*/5 * * * *' },
-  { label: 'every hour', value: '0 * * * *' },
-  { label: 'every 6 hours', value: '0 */6 * * *' },
-  { label: 'daily midnight', value: '0 0 * * *' },
-  { label: 'weekdays 9am', value: '0 9 * * 1-5' },
-  { label: 'weekly monday', value: '0 0 * * 1' },
-];
+import CronPicker from '@/components/CronPicker';
 
 interface CronJob {
   id: string;
@@ -371,29 +363,10 @@ export default function CronPage() {
               {/* Schedule */}
               <div className="space-y-1.5">
                 <Label className="font-mono text-[10px] text-zinc-500">schedule (cron expression)</Label>
-                <Input
+                <CronPicker
                   value={form.schedule}
-                  onChange={(e) => setForm(f => ({ ...f, schedule: e.target.value }))}
-                  placeholder="0 * * * *"
-                  className="font-mono text-sm h-8 bg-zinc-900 border-zinc-700 text-zinc-100 placeholder:text-zinc-700 focus:border-emerald-800"
+                  onChange={(v) => setForm(f => ({ ...f, schedule: v }))}
                 />
-                {/* Presets */}
-                <div className="flex flex-wrap gap-1.5">
-                  {PRESETS.map((p) => (
-                    <button
-                      key={p.value}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, schedule: p.value }))}
-                      className={`text-[10px] font-mono px-2 py-1 rounded border transition-colors ${
-                        form.schedule === p.value
-                          ? 'bg-emerald-950 border-emerald-700 text-emerald-400'
-                          : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Task prompt */}

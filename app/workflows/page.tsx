@@ -18,6 +18,8 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import CronPicker from '@/components/CronPicker';
+import { describeCron } from '@/lib/cron-utils';
 import type { AgentType } from '@/types';
 
 interface WorkflowStep {
@@ -34,6 +36,8 @@ interface WorkflowDef {
   name: string;
   description: string;
   steps: WorkflowStep[];
+  schedule?: string | null;
+  cron_enabled?: number;
 }
 
 const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'custom', 'test'];
@@ -80,6 +84,8 @@ export default function WorkflowsPage() {
   const [edName, setEdName] = useState('');
   const [edDesc, setEdDesc] = useState('');
   const [edSteps, setEdSteps] = useState<WorkflowStep[]>([]);
+  const [edSchedule, setEdSchedule] = useState('0 * * * *');
+  const [edCronEnabled, setEdCronEnabled] = useState(false);
   const [isNew, setIsNew] = useState(false);
 
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -139,6 +145,8 @@ export default function WorkflowsPage() {
     setEdName(wf.name);
     setEdDesc(wf.description);
     setEdSteps(wf.steps);
+    setEdSchedule(wf.schedule || '0 * * * *');
+    setEdCronEnabled(!!wf.cron_enabled);
     setIsNew(false);
     setViewingRun(null);
     setError('');
@@ -157,6 +165,8 @@ export default function WorkflowsPage() {
     setEdName('');
     setEdDesc('');
     setEdSteps([{ name: 'step-1', type: 'claude', model: 'sonnet', task: '', parallel: false }]);
+    setEdSchedule('0 * * * *');
+    setEdCronEnabled(false);
     setIsNew(true);
     setError('');
   };
@@ -218,8 +228,8 @@ export default function WorkflowsPage() {
     try {
       const method = isNew ? 'POST' : 'PUT';
       const body = isNew
-        ? { name: edName, description: edDesc, steps: edSteps }
-        : { id: selected, name: edName, description: edDesc, steps: edSteps };
+        ? { name: edName, description: edDesc, steps: edSteps, schedule: edCronEnabled ? edSchedule : null, cron_enabled: edCronEnabled ? 1 : 0 }
+        : { id: selected, name: edName, description: edDesc, steps: edSteps, schedule: edCronEnabled ? edSchedule : null, cron_enabled: edCronEnabled ? 1 : 0 };
       const res = await fetch('/api/workflows', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error('Save failed');
       const data = await res.json();
@@ -814,6 +824,39 @@ export default function WorkflowsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Schedule section */}
+                <Card className="bg-zinc-900/60 border-zinc-800">
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider">schedule</span>
+                        {edCronEnabled && (
+                          <Badge variant="outline" className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border-emerald-500/25">
+                            {describeCron(edSchedule)}
+                          </Badge>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEdCronEnabled(!edCronEnabled)}
+                        className={`relative w-8 h-[18px] rounded-full transition-colors ${
+                          edCronEnabled ? 'bg-emerald-600' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
+                          edCronEnabled ? 'left-[16px]' : 'left-[2px]'
+                        }`} />
+                      </button>
+                    </div>
+                    {edCronEnabled && (
+                      <CronPicker
+                        value={edSchedule}
+                        onChange={setEdSchedule}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
 
                 {/* Run status */}
                 {runAgents.length > 0 && (

@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ workflows: workflows.map((w: any) => {
     let steps: unknown[] = [];
     try { steps = JSON.parse(w.steps_json); } catch { steps = []; }
-    return { ...w, steps };
+    let layout = null;
+    try { if (w.layout_json) layout = JSON.parse(w.layout_json); } catch { layout = null; }
+    return { ...w, steps, layout, schedule: w.schedule || null, cron_enabled: w.cron_enabled || 0 };
   }) });
 }
 
@@ -43,21 +45,29 @@ export async function POST(req: NextRequest) {
   }
 
   // Default: create workflow
-  const { name, description, steps } = body;
+  const { name, description, steps, schedule, cron_enabled, layout } = body;
   if (!name || !steps || !Array.isArray(steps)) {
     return NextResponse.json({ error: 'name and steps[] required' }, { status: 400 });
   }
   const id = uuidv4();
-  saveWorkflow(id, name, description || '', steps);
-  return NextResponse.json({ workflow: { id, name, description, steps } }, { status: 201 });
+  saveWorkflow(id, name, description || '', steps, {
+    schedule: schedule || null,
+    cronEnabled: cron_enabled ? 1 : 0,
+    layout: layout || null,
+  });
+  return NextResponse.json({ workflow: { id, name, description, steps, schedule, cron_enabled } }, { status: 201 });
 }
 
 export async function PUT(req: NextRequest) {
-  const { id, name, description, steps } = await req.json();
+  const { id, name, description, steps, schedule, cron_enabled, layout } = await req.json();
   if (!id || !name || !steps) {
     return NextResponse.json({ error: 'id, name, and steps required' }, { status: 400 });
   }
-  saveWorkflow(id, name, description || '', steps);
+  saveWorkflow(id, name, description || '', steps, {
+    schedule: schedule || null,
+    cronEnabled: cron_enabled ? 1 : 0,
+    layout: layout || null,
+  });
   return NextResponse.json({ ok: true });
 }
 
