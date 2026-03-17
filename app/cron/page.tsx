@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Clock, Play, Pause, Trash2, Edit2, RotateCcw, Calendar, X, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Clock, Play, Pause, Trash2, Edit2, RotateCcw, Calendar, X, Check, FileText, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -68,6 +68,53 @@ const BLANK = {
   repo: '',
 };
 
+// --- Draft system ---
+const DRAFTS_KEY = 'boardroom:cron-drafts';
+const ACTIVE_DRAFT_KEY = 'boardroom:cron-active-draft';
+
+interface DraftState {
+  id: string;
+  editingId: string | null; // cron job ID if editing existing
+  isNew: boolean;
+  name: string;
+  schedule: string;
+  task: string;
+  agentType: string;
+  model: string;
+  repo: string;
+  savedAt: number;
+}
+
+function loadDrafts(): DraftState[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(DRAFTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveDrafts(drafts: DraftState[]) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch {}
+}
+
+function getActiveDraftId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try { return localStorage.getItem(ACTIVE_DRAFT_KEY); } catch { return null; }
+}
+
+function setActiveDraftId(id: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (id) localStorage.setItem(ACTIVE_DRAFT_KEY, id);
+    else localStorage.removeItem(ACTIVE_DRAFT_KEY);
+  } catch {}
+}
+
+function genDraftId(): string {
+  return `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +127,12 @@ export default function CronPage() {
 
   // Form state
   const [form, setForm] = useState(BLANK);
+
+  // Draft state
+  const [drafts, setDrafts] = useState<DraftState[]>([]);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [draftsOpen, setDraftsOpen] = useState(true);
+  const isDirty = useRef(false);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -99,9 +152,104 @@ export default function CronPage() {
     return () => clearInterval(iv);
   }, [fetchJobs]);
 
+  // Restore drafts on mount
+  useEffect(() => {
+    const saved = loadDrafts();
+    setDrafts(saved);
+    const activeId = getActiveDraftId();
+    if (activeId) {
+      const active = saved.find(d => d.id === activeId);
+      if (active) {
+        setCurrentDraftId(active.id);
+        setEditingId(active.editingId);
+        setForm({
+          name: active.name,
+          schedule: active.schedule,
+          task: active.task,
+          agent_type: active.agentType,
+          model: active.model,
+          repo: active.repo,
+        });
+        setShowForm(true);
+        isDirty.current = false;
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save draft (500ms debounce)
+  useEffect(() => {
+    if (!isDirty.current || !showForm) return;
+    const timer = setTimeout(() => {
+      if (!isDirty.current) return;
+      const draftId = currentDraftId || genDraftId();
+      const draft: DraftState = {
+        id: draftId,
+        editingId,
+        isNew: !editingId,
+        name: form.name,
+        schedule: form.schedule,
+        task: form.task,
+        agentType: form.agent_type,
+        model: form.model,
+        repo: form.repo,
+        savedAt: Date.now(),
+      };
+      setDrafts(prev => {
+        const next = prev.filter(d => d.id !== draftId);
+        next.unshift(draft);
+        saveDrafts(next);
+        return next;
+      });
+      if (!currentDraftId) setCurrentDraftId(draftId);
+      setActiveDraftId(draftId);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [form, showForm, editingId, currentDraftId]);
+
+  // Helper: delete a draft
+  const deleteDraft = useCallback((id: string) => {
+    setDrafts(prev => {
+      const next = prev.filter(d => d.id !== id);
+      saveDrafts(next);
+      return next;
+    });
+    if (currentDraftId === id) {
+      setCurrentDraftId(null);
+      setActiveDraftId(null);
+    }
+  }, [currentDraftId]);
+
+  // Helper: load draft into editor
+  const loadDraftIntoEditor = useCallback((draft: DraftState) => {
+    setEditingId(draft.editingId);
+    setForm({
+      name: draft.name,
+      schedule: draft.schedule,
+      task: draft.task,
+      agent_type: draft.agentType,
+      model: draft.model,
+      repo: draft.repo,
+    });
+    setCurrentDraftId(draft.id);
+    setActiveDraftId(draft.id);
+    isDirty.current = false;
+    setError('');
+    setSuccess('');
+    setShowForm(true);
+  }, []);
+
+  // Wrap setForm to mark dirty on user changes
+  const updateForm = useCallback((updater: (prev: typeof BLANK) => typeof BLANK) => {
+    isDirty.current = true;
+    setForm(updater);
+  }, []);
+
   const openNew = () => {
     setEditingId(null);
     setForm(BLANK);
+    setCurrentDraftId(null);
+    setActiveDraftId(null);
+    isDirty.current = false;
     setError('');
     setSuccess('');
     setShowForm(true);
@@ -117,6 +265,9 @@ export default function CronPage() {
       model: job.model,
       repo: job.repo || '',
     });
+    setCurrentDraftId(null);
+    setActiveDraftId(null);
+    isDirty.current = false;
     setError('');
     setSuccess('');
     setShowForm(true);
@@ -125,6 +276,8 @@ export default function CronPage() {
   const closeForm = () => {
     setShowForm(false);
     setEditingId(null);
+    setCurrentDraftId(null);
+    setActiveDraftId(null);
     setError('');
   };
 
@@ -149,6 +302,8 @@ export default function CronPage() {
         throw new Error(e.error || 'Failed to save');
       }
       await fetchJobs();
+      isDirty.current = false;
+      if (currentDraftId) deleteDraft(currentDraftId);
       setSuccess(editingId ? 'updated' : 'created');
       setTimeout(() => setSuccess(''), 2000);
       closeForm();
@@ -249,6 +404,77 @@ export default function CronPage() {
         ) : (
           <div className="max-w-4xl mx-auto p-6 space-y-3">
             {/* Job list */}
+            {/* Drafts section */}
+            {drafts.length > 0 && (
+              <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 overflow-hidden">
+                <button
+                  onClick={() => setDraftsOpen(o => !o)}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-amber-950/30 transition-colors"
+                >
+                  {draftsOpen ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-amber-500" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-amber-500" />
+                  )}
+                  <FileText className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="font-mono text-xs text-amber-400">drafts</span>
+                  <span className="font-mono text-[10px] text-amber-600">{drafts.length}</span>
+                </button>
+                {draftsOpen && (
+                  <div className="border-t border-amber-900/40 divide-y divide-amber-900/30">
+                    {drafts.map((draft) => (
+                      <div
+                        key={draft.id}
+                        className={`flex items-center gap-3 px-4 py-2.5 group ${
+                          currentDraftId === draft.id ? 'bg-amber-950/40' : 'hover:bg-amber-950/20'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => loadDraftIntoEditor(draft)}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-amber-200 truncate">
+                              {draft.name || '(untitled)'}
+                            </span>
+                            {draft.editingId && (
+                              <span className="text-[9px] font-mono text-amber-700 bg-amber-950 px-1 py-0.5 rounded border border-amber-800">
+                                editing
+                              </span>
+                            )}
+                            {currentDraftId === draft.id && (
+                              <span className="text-[9px] font-mono text-amber-500">active</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="font-mono text-[10px] text-amber-700 truncate max-w-[200px]">
+                              {draft.task || '(no task)'}
+                            </span>
+                            <span className="font-mono text-[10px] text-amber-800">
+                              {new Date(draft.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => loadDraftIntoEditor(draft)}
+                            title="load draft"
+                            className="p-1 rounded text-amber-600 hover:text-amber-400 hover:bg-amber-900/40 transition-colors"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => deleteDraft(draft.id)}
+                            title="discard draft"
+                            className="p-1 rounded text-amber-600 hover:text-red-400 hover:bg-amber-900/40 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {jobs.map((job) => (
               <div
                 key={job.id}
@@ -354,7 +580,7 @@ export default function CronPage() {
                 <Label className="font-mono text-[10px] text-zinc-500">name</Label>
                 <Input
                   value={form.name}
-                  onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                  onChange={(e) => updateForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="daily-report"
                   className="font-mono text-sm h-8 bg-zinc-900 border-zinc-700 text-zinc-100 placeholder:text-zinc-700 focus:border-emerald-800"
                 />
@@ -365,7 +591,7 @@ export default function CronPage() {
                 <Label className="font-mono text-[10px] text-zinc-500">schedule (cron expression)</Label>
                 <CronPicker
                   value={form.schedule}
-                  onChange={(v) => setForm(f => ({ ...f, schedule: v }))}
+                  onChange={(v) => updateForm(f => ({ ...f, schedule: v }))}
                 />
               </div>
 
@@ -374,7 +600,7 @@ export default function CronPage() {
                 <Label className="font-mono text-[10px] text-zinc-500">task prompt</Label>
                 <Textarea
                   value={form.task}
-                  onChange={(e) => setForm(f => ({ ...f, task: e.target.value }))}
+                  onChange={(e) => updateForm(f => ({ ...f, task: e.target.value }))}
                   placeholder="Run a code review on the latest changes..."
                   className="font-mono text-sm bg-zinc-900 border-zinc-700 text-zinc-100 placeholder:text-zinc-700 resize-none focus:border-emerald-800 min-h-[80px]"
                   spellCheck={false}
@@ -390,7 +616,7 @@ export default function CronPage() {
                       <button
                         key={t}
                         type="button"
-                        onClick={() => setForm(f => ({ ...f, agent_type: t }))}
+                        onClick={() => updateForm(f => ({ ...f, agent_type: t }))}
                         className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors ${
                           form.agent_type === t
                             ? 'bg-emerald-950 border-emerald-700 text-emerald-400'
@@ -406,7 +632,7 @@ export default function CronPage() {
                   <Label className="font-mono text-[10px] text-zinc-500">model</Label>
                   <Input
                     value={form.model}
-                    onChange={(e) => setForm(f => ({ ...f, model: e.target.value }))}
+                    onChange={(e) => updateForm(f => ({ ...f, model: e.target.value }))}
                     placeholder="sonnet"
                     className="font-mono text-sm h-8 bg-zinc-900 border-zinc-700 text-zinc-100 placeholder:text-zinc-700 focus:border-emerald-800"
                   />
@@ -418,7 +644,7 @@ export default function CronPage() {
                 <Label className="font-mono text-[10px] text-zinc-500">repo path (optional)</Label>
                 <Input
                   value={form.repo}
-                  onChange={(e) => setForm(f => ({ ...f, repo: e.target.value }))}
+                  onChange={(e) => updateForm(f => ({ ...f, repo: e.target.value }))}
                   placeholder="/path/to/repo"
                   className="font-mono text-sm h-8 bg-zinc-900 border-zinc-700 text-zinc-100 placeholder:text-zinc-700 focus:border-emerald-800"
                 />

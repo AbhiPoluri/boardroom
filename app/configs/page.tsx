@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Bot, Plus, Trash2, Save, Upload, FileText } from 'lucide-react';
+import { Bot, Plus, Trash2, Save, Upload, FileText, Eye } from 'lucide-react';
 import type { AgentType } from '@/types';
 
 interface AgentConfig {
@@ -18,6 +18,47 @@ interface AgentConfig {
 }
 
 const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'custom', 'test'];
+
+// --- Draft persistence ---
+const DRAFTS_KEY = 'boardroom:config-drafts';
+const ACTIVE_DRAFT_KEY = 'boardroom:config-active-draft';
+
+interface DraftState {
+  id: string;
+  selected: string | null;
+  isNew: boolean;
+  name: string;
+  type: string;
+  model: string;
+  description: string;
+  prompt: string;
+  savedAt: number;
+}
+
+function loadDrafts(): DraftState[] {
+  if (typeof window === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]'); } catch { return []; }
+}
+
+function saveDrafts(drafts: DraftState[]) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts)); } catch {}
+}
+
+function getActiveDraftId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(ACTIVE_DRAFT_KEY) || null;
+}
+
+function setActiveDraftId(id: string | null) {
+  if (typeof window === 'undefined') return;
+  if (id) localStorage.setItem(ACTIVE_DRAFT_KEY, id);
+  else localStorage.removeItem(ACTIVE_DRAFT_KEY);
+}
+
+function genDraftId(): string {
+  return `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export default function ConfigsPage() {
   const [configs, setConfigs] = useState<AgentConfig[]>([]);
@@ -35,6 +76,11 @@ export default function ConfigsPage() {
   const [edPrompt, setEdPrompt] = useState('');
   const [isNew, setIsNew] = useState(false);
   const [dirty, setDirty] = useState(false);
+
+  // Draft state
+  const [drafts, setDrafts] = useState<DraftState[]>([]);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const isDirty = useRef(false);
 
   // Raw markdown view
   const [rawMode, setRawMode] = useState(false);
@@ -180,7 +226,85 @@ export default function ConfigsPage() {
 
   useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
 
+  // Restore drafts from localStorage on mount
+  useEffect(() => {
+    const stored = loadDrafts();
+    const activeId = getActiveDraftId();
+    const active = activeId ? stored.find(d => d.id === activeId) : null;
+    if (stored.length > 0) setDrafts(stored);
+    if (active) {
+      isDirty.current = false;
+      setCurrentDraftId(active.id);
+      setEdName(active.name);
+      setEdType(active.type as AgentType);
+      setEdModel(active.model);
+      setEdDescription(active.description);
+      setEdPrompt(active.prompt);
+      setIsNew(active.isNew);
+      if (active.selected) setSelected(active.selected);
+      isDirty.current = true;
+    }
+  }, []);
+
+  // Auto-save draft (500ms debounce)
+  useEffect(() => {
+    if (!isNew && !selected) return;
+    if (!currentDraftId && !isDirty.current) return;
+    const timeout = setTimeout(() => {
+      const draftId = currentDraftId || genDraftId();
+      if (!currentDraftId) setCurrentDraftId(draftId);
+      const draft: DraftState = {
+        id: draftId, selected, isNew, name: edName, type: edType,
+        model: edModel, description: edDescription, prompt: edPrompt,
+        savedAt: Date.now(),
+      };
+      setDrafts(prev => {
+        const updated = prev.filter(d => d.id !== draftId);
+        updated.unshift(draft);
+        saveDrafts(updated);
+        return updated;
+      });
+      setActiveDraftId(draftId);
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [selected, isNew, edName, edType, edModel, edDescription, edPrompt, currentDraftId]);
+
+  // Delete a draft
+  const deleteDraft = (id: string) => {
+    setDrafts(prev => {
+      const updated = prev.filter(d => d.id !== id);
+      saveDrafts(updated);
+      return updated;
+    });
+    if (currentDraftId === id) {
+      setCurrentDraftId(null);
+      setActiveDraftId(null);
+    }
+  };
+
+  // Load a draft into the editor
+  const loadDraftIntoEditor = (d: DraftState) => {
+    setCurrentDraftId(d.id);
+    setActiveDraftId(d.id);
+    setEdName(d.name);
+    setEdType(d.type as AgentType);
+    setEdModel(d.model);
+    setEdDescription(d.description);
+    setEdPrompt(d.prompt);
+    setIsNew(d.isNew);
+    if (d.selected) setSelected(d.selected);
+    else setSelected(null);
+    setDirty(true);
+    isDirty.current = true;
+    setError('');
+    setSuccess('');
+    updateRaw(d.name, d.type, d.model, d.description, d.prompt);
+  };
+
   const selectConfig = (slug: string) => {
+    isDirty.current = false;
+    setCurrentDraftId(null);
+    setActiveDraftId(null);
     const config = configs.find(c => c.slug === slug);
     if (!config) return;
     setSelected(slug);
@@ -197,6 +321,9 @@ export default function ConfigsPage() {
   };
 
   const startNew = () => {
+    const newDraftId = genDraftId();
+    setCurrentDraftId(newDraftId);
+    setActiveDraftId(newDraftId);
     setSelected(null);
     setEdName('');
     setEdType('claude');
@@ -205,6 +332,7 @@ export default function ConfigsPage() {
     setEdPrompt('');
     setIsNew(true);
     setDirty(true);
+    isDirty.current = true;
     setError('');
     setSuccess('');
     updateRaw('', 'claude', 'sonnet', '', '');
@@ -247,6 +375,7 @@ export default function ConfigsPage() {
   const updateField = <T,>(setter: (v: T) => void, value: T, field: string) => {
     setter(value);
     setDirty(true);
+    isDirty.current = true;
     // Rebuild raw from current + updated field
     const n = field === 'name' ? (value as string) : edName;
     const t = field === 'type' ? (value as string) : edType;
@@ -283,6 +412,8 @@ export default function ConfigsPage() {
       setSelected(data.config.slug);
       setIsNew(false);
       setDirty(false);
+      isDirty.current = false;
+      if (currentDraftId) deleteDraft(currentDraftId);
       setSuccess('Saved to agents/' + data.config.slug + '.md');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -374,35 +505,103 @@ export default function ConfigsPage() {
           {loading ? (
             <div className="p-4 text-xs font-mono text-zinc-700 animate-pulse text-center">loading...</div>
           ) : configs.length === 0 ? (
-            <div className="p-4 text-xs font-mono text-zinc-700">
-              no configs found<br />
-              <span className="text-zinc-600">create one with + new agent</span>
-            </div>
-          ) : (
-            <div className="py-1">
-              {configs.map((config) => (
-                <button
-                  key={config.slug}
-                  onClick={() => selectConfig(config.slug)}
-                  className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
-                    selected === config.slug
-                      ? 'bg-zinc-800/80 text-zinc-100'
-                      : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
-                  }`}
-                >
-                  <Bot className={`w-3.5 h-3.5 flex-shrink-0 ${selected === config.slug ? 'text-emerald-400' : 'text-zinc-600'}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-xs truncate">{config.name}</div>
-                    <div className="font-mono text-[10px] text-zinc-600 truncate">{config.description || 'no description'}</div>
+            <>
+              <div className="p-4 text-xs font-mono text-zinc-700">
+                no configs found<br />
+                <span className="text-zinc-600">create one with + new agent</span>
+              </div>
+              {drafts.length > 0 && (
+                <>
+                  <div className="px-3 pt-3 pb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Eye className="w-3 h-3 text-amber-500" />
+                      <span className="text-[10px] font-mono text-amber-500 uppercase tracking-wider">drafts</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-600">{drafts.length}</span>
                   </div>
-                  {config.model && (
-                    <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-500 flex-shrink-0">
-                      {config.model}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+                  {drafts.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => loadDraftIntoEditor(d)}
+                      className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
+                        currentDraftId === d.id ? 'bg-amber-950/30 text-amber-300 ring-1 ring-amber-500/20' : 'text-zinc-500 hover:bg-zinc-900'
+                      }`}
+                    >
+                      <Bot className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-mono text-xs truncate">{d.name || 'untitled'}</div>
+                        <div className="font-mono text-[10px] text-zinc-600">{new Date(d.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteDraft(d.id); }}
+                        className="p-0.5 text-zinc-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </button>
+                  ))}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="py-1">
+                {configs.map((config) => (
+                  <button
+                    key={config.slug}
+                    onClick={() => selectConfig(config.slug)}
+                    className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
+                      selected === config.slug
+                        ? 'bg-zinc-800/80 text-zinc-100'
+                        : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                    }`}
+                  >
+                    <Bot className={`w-3.5 h-3.5 flex-shrink-0 ${selected === config.slug ? 'text-emerald-400' : 'text-zinc-600'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-xs truncate">{config.name}</div>
+                      <div className="font-mono text-[10px] text-zinc-600 truncate">{config.description || 'no description'}</div>
+                    </div>
+                    {config.model && (
+                      <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-500 flex-shrink-0">
+                        {config.model}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {drafts.length > 0 && (
+                <>
+                  <div className="px-3 pt-3 pb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Eye className="w-3 h-3 text-amber-500" />
+                      <span className="text-[10px] font-mono text-amber-500 uppercase tracking-wider">drafts</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-600">{drafts.length}</span>
+                  </div>
+                  {drafts.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => loadDraftIntoEditor(d)}
+                      className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
+                        currentDraftId === d.id ? 'bg-amber-950/30 text-amber-300 ring-1 ring-amber-500/20' : 'text-zinc-500 hover:bg-zinc-900'
+                      }`}
+                    >
+                      <Bot className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-mono text-xs truncate">{d.name || 'untitled'}</div>
+                        <div className="font-mono text-[10px] text-zinc-600">{new Date(d.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteDraft(d.id); }}
+                        className="p-0.5 text-zinc-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </button>
+                  ))}
+                </>
+              )}
+            </>
           )}
         </div>
 
@@ -424,6 +623,7 @@ export default function ConfigsPage() {
                   <span className="font-mono text-xs text-zinc-400">
                     {isNew ? 'new agent' : `agents/${selected}.md`}
                   </span>
+                  {currentDraftId && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-500 border border-amber-800/30">draft</span>}
                   {dirty && <span className="text-[10px] font-mono text-amber-500">unsaved</span>}
                   {success && <span className="text-[10px] font-mono text-emerald-400">{success}</span>}
                   {error && <span className="text-[10px] font-mono text-red-400">{error}</span>}
