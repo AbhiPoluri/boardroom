@@ -25,9 +25,14 @@ interface SkillMeta {
   hasAssets: boolean;
 }
 
-interface SkillDetail extends SkillMeta {
+interface SkillDetail {
+  name: string;
+  description: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, string>;
   content: string;
-  fileDetails: Array<{ path: string; size: number }>;
+  files: Array<{ path: string; size: number }>;
 }
 
 // --- Draft persistence ---
@@ -584,7 +589,7 @@ export default function SkillsPage() {
                   <div>
                     <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider mb-1.5">files</p>
                     <div className="space-y-1">
-                      {detail.fileDetails.map((f) => {
+                      {detail.files.map((f) => {
                         const name = f.path.split('/').pop() || f.path;
                         const isDir = name.endsWith('/');
                         const Icon = name === 'SKILL.md' ? FileText
