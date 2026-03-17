@@ -99,7 +99,10 @@ export default function CostsPage() {
   const enriched = perAgent.map(e => {
     let name = agents[e.agent_id];
     if (!name) {
-      const match = Object.entries(agents).find(([id]) => id.startsWith(e.agent_id) || e.agent_id.startsWith(id));
+      const match = Object.entries(agents).find(([id]) =>
+        id.startsWith(e.agent_id) || e.agent_id.startsWith(id) ||
+        id.slice(0, 8) === e.agent_id.slice(0, 8)
+      );
       name = match?.[1] || e.agent_id.slice(0, 8);
     }
     return { ...e, agent_name: name };
@@ -140,12 +143,25 @@ export default function CostsPage() {
               {session.total_tokens > 1000000 ? `${(session.total_tokens/1000000).toFixed(1)}M` : session.total_tokens > 1000 ? `${(session.total_tokens/1000).toFixed(1)}k` : session.total_tokens}
             </span>
           </div>
+          {perAgent.filter(e => e.input_tokens + e.output_tokens > 0).length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-mono text-zinc-600">agents</span>
+              <span className="text-sm font-mono font-bold text-amber-400">
+                {perAgent.filter(e => e.input_tokens + e.output_tokens > 0).length}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <div className="text-xs font-mono text-zinc-600 animate-pulse text-center">loading cost data...</div>
+        ) : session.total_tokens === 0 && perAgent.length === 0 && !error ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <h3 className="font-mono text-sm text-zinc-500 mb-1">no cost data yet</h3>
+            <p className="font-mono text-xs text-zinc-700">costs appear when agents run</p>
+          </div>
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
             {error && (

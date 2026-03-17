@@ -36,6 +36,7 @@ export function Sparkline({ data, width = 80, height = 20, color = '#34d399' }: 
 
   return (
     <svg width={width} height={height} className="flex-shrink-0">
+      <title>token velocity — last 30 min</title>
       <defs>
         <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity={0.3} />

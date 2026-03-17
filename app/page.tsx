@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import {
   GitBranch, Network,
   ChevronDown, ChevronRight,
-  Folder, BarChart3,
+  Folder, BarChart3, Terminal as TerminalIcon,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/NotificationBell';
 import { MergePanel } from '@/components/MergePanel';
@@ -266,13 +266,16 @@ export default function Dashboard() {
             >
               reset
             </Button>
-            <Button
-              onClick={() => setSpawnOpen(true)}
-              size="sm"
-              className="font-mono bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] px-2"
-            >
-              + spawn
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                onClick={() => setSpawnOpen(true)}
+                size="sm"
+                className="font-mono bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] px-2"
+              >
+                + spawn
+              </Button>
+              <span className="text-[9px] font-mono text-zinc-700">&#8984;K</span>
+            </div>
           </div>
         </header>
 
@@ -361,7 +364,7 @@ export default function Dashboard() {
                 className="px-2 py-1 rounded-lg text-xs font-mono bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
                 title="Save current filters as preset"
               >
-                ★
+                {Object.keys(filterPresets).length > 0 ? '★' : '☆'}
               </button>
             </div>
           </div>
@@ -388,6 +391,12 @@ export default function Dashboard() {
 
           {loading ? (
             <div className="text-center py-16 text-zinc-700 font-mono text-sm animate-pulse">loading...</div>
+          ) : filteredAgents.length === 0 && agents.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <TerminalIcon className="w-10 h-10 text-zinc-800 mb-4" />
+              <h3 className="font-mono text-sm text-zinc-500 mb-1">no agents running</h3>
+              <p className="font-mono text-xs text-zinc-700">spawn your first agent to get started</p>
+            </div>
           ) : groupMode === 'flat' ? (
             renderAgentGrid(filteredAgents)
           ) : groupMode === 'repo' ? (
