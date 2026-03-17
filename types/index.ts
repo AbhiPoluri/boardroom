@@ -13,7 +13,7 @@ export interface Agent {
   worktree_path: string | null;
   pid: number | null;
   port: number | null;
-  depends_on: string | null;
+  depends_on?: string | null;
   created_at: number;
   updated_at: number;
 }

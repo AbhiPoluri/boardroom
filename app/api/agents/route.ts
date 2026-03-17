@@ -33,7 +33,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { task, type = 'claude', repo, name, model, depends_on } = body as SpawnAgentRequest & { depends_on?: string[] };
+    const { task, type = 'claude', repo, useGitIsolation, name, model, depends_on } = body as SpawnAgentRequest & { useGitIsolation?: boolean; depends_on?: string[] };
 
     if (!task) {
       return NextResponse.json({ error: 'task is required' }, { status: 400 });
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Spawn the agent async (don't await - return immediately)
-    spawnAgent({ agentId: id, name: agentName, type, task, repo, model }).catch((err) => {
+    spawnAgent({ agentId: id, name: agentName, type, task, repo, model, useGitIsolation }).catch((err) => {
       console.error(`Failed to spawn agent ${id}:`, err);
     });
 

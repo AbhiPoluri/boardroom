@@ -119,7 +119,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const handleSpawn = async (data: { task: string; type: AgentType; repo?: string; name?: string; model?: string; depends_on?: string[] }) => {
+  const handleSpawn = async (data: { task: string; type: AgentType; repo?: string; useGitIsolation?: boolean; name?: string; model?: string; depends_on?: string[] }) => {
     const res = await fetch('/api/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

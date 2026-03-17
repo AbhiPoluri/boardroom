@@ -36,10 +36,12 @@ export interface SpawnOptions {
   repo?: string;
   model?: string;
   existingWorktreePath?: string;
+  /** When false (default), repo is used as cwd directly — no worktree branch created */
+  useGitIsolation?: boolean;
 }
 
 export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; worktreePath: string }> {
-  const { agentId, name, type, task, repo, model, existingWorktreePath } = opts;
+  const { agentId, name, type, task, repo, model, existingWorktreePath, useGitIsolation = false } = opts;
 
   insertLog(agentId, 'system', `Agent "${name}" starting up (type: ${type})`);
 
@@ -50,11 +52,18 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     // Clear old PTY chunks so the terminal starts fresh for this task
     clearPtyChunks(agentId);
     insertLog(agentId, 'system', `Reusing worktree: ${worktreePath}`);
+  } else if (repo && !useGitIsolation) {
+    // Use the repo directly as cwd — no worktree branch
+    worktreePath = repo;
+    updateAgent(agentId, { worktree_path: worktreePath });
+    insertLog(agentId, 'system', `Working directly in repo (no git isolation): ${worktreePath}`);
   } else {
-    const worktreeResult = await createWorktree(agentId, repo);
+    // Create an isolated git worktree (or a plain temp dir if no repo)
+    const worktreeResult = await createWorktree(agentId, useGitIsolation ? repo : undefined);
     if (worktreeResult.error) insertLog(agentId, 'system', `Worktree warning: ${worktreeResult.error}`);
     worktreePath = worktreeResult.path;
     updateAgent(agentId, { worktree_path: worktreePath });
+    if (repo && useGitIsolation) insertLog(agentId, 'system', `Git isolation ON — branch: boardroom/${agentId}`);
   }
 
   insertLog(agentId, 'system', `Working directory: ${worktreePath}`);

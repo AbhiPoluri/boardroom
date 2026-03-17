@@ -27,7 +27,7 @@ interface AgentConfig {
 interface SpawnModalProps {
   open: boolean;
   onClose: () => void;
-  onSpawn: (data: { task: string; type: AgentType; repo?: string; name?: string; model?: string; depends_on?: string[] }) => Promise<void>;
+  onSpawn: (data: { task: string; type: AgentType; repo?: string; useGitIsolation?: boolean; name?: string; model?: string; depends_on?: string[] }) => Promise<void>;
   onImport: (data: { path: string; name?: string; task?: string; type?: AgentType; model?: string }) => Promise<void>;
   existingAgents?: Array<{ id: string; name: string }>;
 }
@@ -51,6 +51,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
   const [task, setTask] = useState('');
   const [type, setType] = useState<AgentType>('claude');
   const [repo, setRepo] = useState('');
+  const [useGitIsolation, setUseGitIsolation] = useState(false);
   const [name, setName] = useState('');
   const [model, setModel] = useState('');
   const [description, setDescription] = useState('');
@@ -80,7 +81,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
   }, [open, configsLoaded]);
 
   const resetForm = () => {
-    setTask(''); setType('claude'); setRepo(''); setName(''); setModel(''); setDescription('');
+    setTask(''); setType('claude'); setRepo(''); setUseGitIsolation(false); setName(''); setModel(''); setDescription('');
     setImportPath(''); setImportName(''); setImportTask(''); setImportType('claude'); setImportModel('');
     setDependsOn([]);
     setError('');
@@ -91,7 +92,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
     if (!task.trim()) { setError('Task is required'); return; }
     setLoading(true); setError('');
     try {
-      await onSpawn({ task: task.trim(), type, repo: repo.trim() || undefined, name: name.trim() || undefined, model: model.trim() || undefined, depends_on: dependsOn.length > 0 ? dependsOn : undefined });
+      await onSpawn({ task: task.trim(), type, repo: repo.trim() || undefined, useGitIsolation: repo.trim() ? useGitIsolation : undefined, name: name.trim() || undefined, model: model.trim() || undefined, depends_on: dependsOn.length > 0 ? dependsOn : undefined });
       resetForm(); onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to spawn agent');
@@ -336,6 +337,25 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                   placeholder="/path/to/repo"
                   className="font-mono text-sm bg-zinc-950 border-zinc-700 text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-800"
                 />
+                {repo.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setUseGitIsolation(v => !v)}
+                    className={`flex items-center gap-1.5 text-[10px] font-mono transition-colors ${
+                      useGitIsolation ? 'text-emerald-400' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                    title="Create an isolated git worktree branch for this agent"
+                  >
+                    <span className={`inline-flex w-7 h-3.5 rounded-full border transition-colors ${
+                      useGitIsolation ? 'bg-emerald-700 border-emerald-600' : 'bg-zinc-800 border-zinc-700'
+                    } relative`}>
+                      <span className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform ${
+                        useGitIsolation ? 'translate-x-3.5' : ''
+                      }`} />
+                    </span>
+                    git isolation
+                  </button>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="font-mono text-xs text-zinc-400">Model</Label>
