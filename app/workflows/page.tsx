@@ -90,26 +90,22 @@ function genDraftId() {
 }
 
 export default function WorkflowsPage() {
-  const initialDrafts = loadDrafts();
-  const activeDraftId = getActiveDraftId();
-  const activeDraft = activeDraftId ? initialDrafts.find(d => d.id === activeDraftId) : null;
-
   const [workflows, setWorkflows] = useState<WorkflowDef[]>([]);
-  const [drafts, setDrafts] = useState<DraftState[]>(initialDrafts);
-  const [currentDraftId, setCurrentDraftId] = useState<string | null>(activeDraft?.id ?? null);
-  const [selected, setSelected] = useState<string | null>(activeDraft?.selected ?? null);
+  const [drafts, setDrafts] = useState<DraftState[]>([]);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [running, setRunning] = useState(false);
 
-  const [edName, setEdName] = useState(activeDraft?.name ?? '');
-  const [edDesc, setEdDesc] = useState(activeDraft?.desc ?? '');
-  const [edSteps, setEdSteps] = useState<WorkflowStep[]>(activeDraft?.steps ?? []);
-  const [edSchedule, setEdSchedule] = useState(activeDraft?.schedule ?? '0 * * * *');
-  const [edCronEnabled, setEdCronEnabled] = useState(activeDraft?.cronEnabled ?? false);
-  const [isNew, setIsNew] = useState(activeDraft?.isNew ?? false);
+  const [edName, setEdName] = useState('');
+  const [edDesc, setEdDesc] = useState('');
+  const [edSteps, setEdSteps] = useState<WorkflowStep[]>([]);
+  const [edSchedule, setEdSchedule] = useState('0 * * * *');
+  const [edCronEnabled, setEdCronEnabled] = useState(false);
+  const [isNew, setIsNew] = useState(false);
 
   // Only true after the user has actually changed something in the editor.
   // Prevents a programmatic load (selectWorkflow) from immediately creating a draft.
@@ -193,12 +189,33 @@ export default function WorkflowsPage() {
   const [runHistory, setRunHistory] = useState<HistoryRun[]>([]);
 
   useEffect(() => {
+    // Restore draft state from localStorage after mount (avoids SSR/client hydration mismatch)
+    const storedDrafts = loadDrafts();
+    const storedActiveDraftId = getActiveDraftId();
+    const storedActiveDraft = storedActiveDraftId
+      ? storedDrafts.find(d => d.id === storedActiveDraftId)
+      : null;
+
+    if (storedDrafts.length > 0) setDrafts(storedDrafts);
+
+    if (storedActiveDraft) {
+      isDirty.current = false;
+      setCurrentDraftId(storedActiveDraft.id);
+      setEdName(storedActiveDraft.name);
+      setEdDesc(storedActiveDraft.desc);
+      setEdSteps(storedActiveDraft.steps);
+      setEdSchedule(storedActiveDraft.schedule);
+      setEdCronEnabled(storedActiveDraft.cronEnabled);
+      setIsNew(storedActiveDraft.isNew);
+      isDirty.current = true; // existing draft — keep auto-saving
+    }
+
     fetch('/api/workflows').then(r => r.json()).then(data => {
       setWorkflows(data.workflows || []);
       setLoading(false);
-      // If we restored a draft editing an existing workflow, re-select it
-      if (activeDraft?.selected && !activeDraft.isNew) {
-        const wf = (data.workflows || []).find((w: WorkflowDef) => w.id === activeDraft.selected);
+      // If restoring a draft editing an existing workflow, re-select it
+      if (storedActiveDraft?.selected && !storedActiveDraft.isNew) {
+        const wf = (data.workflows || []).find((w: WorkflowDef) => w.id === storedActiveDraft.selected);
         if (wf) setSelected(wf.id);
       }
     }).catch(() => setLoading(false));
