@@ -231,20 +231,32 @@ export default function WorkflowsPage() {
   // Poll active runs + fetch history
   useEffect(() => {
     const fetchRuns = () => {
-      fetch('/api/workflows?runs=1').then(r => r.json()).then(data => {
-        setActiveRuns(data.runs || []);
-      }).catch(() => {});
-    };
-    const fetchHistory = () => {
-      fetch('/api/workflows/history').then(r => r.json()).then(data => {
-        setRunHistory(data.runs || []);
-      }).catch(() => {});
+      Promise.all([
+        fetch('/api/workflows?runs=1').then(r => r.json()).catch(() => ({ runs: [] })),
+        fetch('/api/workflows/history').then(r => r.json()).catch(() => ({ runs: [] })),
+      ]).then(([runsData, historyData]) => {
+        const inMemory: WorkflowRun[] = runsData.runs || [];
+        const history: HistoryRun[] = historyData.runs || [];
+        setRunHistory(history);
+
+        // Merge: include DB history runs that are still "running" but not in in-memory
+        // (happens after hot reload wipes the in-memory map)
+        const inMemoryIds = new Set(inMemory.map(r => r.runId));
+        const fromHistory: WorkflowRun[] = history
+          .filter(h => h.status === 'running' && !inMemoryIds.has(h.id))
+          .map(h => ({
+            runId: h.id,
+            workflowName: h.workflow_id,
+            status: 'running' as const,
+            agents: (h.agent_ids || []).map((aid: string) => ({ stepName: '?', agentId: aid, status: 'running' })),
+          }));
+
+        setActiveRuns([...inMemory, ...fromHistory]);
+      });
     };
     fetchRuns();
-    fetchHistory();
     const iv = setInterval(fetchRuns, 8000);
-    const hv = setInterval(fetchHistory, 15000);
-    return () => { clearInterval(iv); clearInterval(hv); };
+    return () => clearInterval(iv);
   }, []);
 
   // Poll viewed run status (faster 3s interval for live canvas)

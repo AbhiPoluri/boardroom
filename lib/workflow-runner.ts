@@ -79,10 +79,10 @@ export function cancelWorkflow(runId: string): boolean {
 }
 
 export function getAllWorkflowRuns() {
-  // Purge completed runs older than 60s from in-memory map
+  // Purge completed runs older than 5min from in-memory map
   const now = Date.now();
   for (const [runId, run] of activeRuns) {
-    if (run.status !== 'running' && run.finishedAt && now - run.finishedAt > 60_000) {
+    if (run.status !== 'running' && run.finishedAt && now - run.finishedAt > 300_000) {
       activeRuns.delete(runId);
     }
   }
