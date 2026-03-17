@@ -304,6 +304,7 @@ export default function WorkflowsPage() {
       if (data.workflow?.id) setSelected(data.workflow.id);
       setIsNew(false);
       setSuccess('saved');
+      isDirty.current = false;
       if (currentDraftId) deleteDraft(currentDraftId);
       setTimeout(() => setSuccess(''), 2000);
     } catch { setError('Failed to save'); } finally { setSaving(false); }
