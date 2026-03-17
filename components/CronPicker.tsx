@@ -11,8 +11,6 @@ interface CronPickerProps {
 
 type Mode = 'minutes' | 'hours' | 'daily' | 'weekly' | 'monthly';
 
-const MINUTE_INTERVALS = [1, 2, 5, 10, 15, 20, 30];
-const HOUR_INTERVALS = [1, 2, 3, 4, 6, 8, 12];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
 const MINUTES_OF_HOUR = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
@@ -219,44 +217,38 @@ export default function CronPicker({ value, onChange, className }: CronPickerPro
 
         {/* ── MINUTES ── */}
         {mode === 'minutes' && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 font-mono">every</span>
-            <div className="flex gap-1.5 flex-wrap">
-              {MINUTE_INTERVALS.map(n => (
-                <button key={n} type="button"
-                  onClick={() => setStateAndEmit({ minuteInterval: n })}
-                  className={`px-2.5 py-1 rounded text-xs font-mono border transition-colors ${
-                    state.minuteInterval === n
-                      ? 'bg-emerald-950 border-emerald-700 text-emerald-300'
-                      : 'border-zinc-700 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+            <input
+              type="number"
+              min={1}
+              max={59}
+              value={state.minuteInterval}
+              onChange={e => {
+                const n = Math.max(1, Math.min(59, parseInt(e.target.value) || 1));
+                setStateAndEmit({ minuteInterval: n });
+              }}
+              className="w-16 h-8 text-sm font-mono text-center bg-zinc-950 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-700 focus:outline-none"
+            />
             <span className="text-xs text-zinc-400 font-mono">minutes</span>
           </div>
         )}
 
         {/* ── HOURS ── */}
         {mode === 'hours' && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 font-mono">every</span>
-            <div className="flex gap-1.5 flex-wrap">
-              {HOUR_INTERVALS.map(n => (
-                <button key={n} type="button"
-                  onClick={() => setStateAndEmit({ hourInterval: n })}
-                  className={`px-2.5 py-1 rounded text-xs font-mono border transition-colors ${
-                    state.hourInterval === n
-                      ? 'bg-emerald-950 border-emerald-700 text-emerald-300'
-                      : 'border-zinc-700 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+            <input
+              type="number"
+              min={1}
+              max={23}
+              value={state.hourInterval}
+              onChange={e => {
+                const n = Math.max(1, Math.min(23, parseInt(e.target.value) || 1));
+                setStateAndEmit({ hourInterval: n });
+              }}
+              className="w-16 h-8 text-sm font-mono text-center bg-zinc-950 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-700 focus:outline-none"
+            />
             <span className="text-xs text-zinc-400 font-mono">hour{state.hourInterval !== 1 ? 's' : ''}</span>
           </div>
         )}
