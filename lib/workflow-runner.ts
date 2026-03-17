@@ -43,11 +43,23 @@ const activeRuns = new Map<string, {
   finishedAt?: number;
 }>();
 
+/** Strip control characters that break JSON serialization */
+function sanitize(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+}
+
 export function getWorkflowRun(runId: string) {
   const run = activeRuns.get(runId);
   if (!run) return null;
+  // Sanitize step outputs to remove TUI control characters
+  const cleanOutputs: Record<string, string> = {};
+  for (const [k, v] of Object.entries(run.stepOutputs)) {
+    cleanOutputs[k] = sanitize(v);
+  }
   return {
     ...run,
+    stepOutputs: cleanOutputs,
     skippedSteps: Array.from(run.skippedSteps),
   };
 }
