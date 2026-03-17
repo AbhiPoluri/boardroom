@@ -1,0 +1,395 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Zap, Plus, Trash2, Save, Copy, Download, FolderOpen,
+  FileText, Code2, BookOpen, Package,
+} from 'lucide-react';
+
+interface SkillMeta {
+  name: string;
+  description: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, string>;
+  path: string;
+  files: string[];
+  hasScripts: boolean;
+  hasReferences: boolean;
+  hasAssets: boolean;
+}
+
+interface SkillDetail extends SkillMeta {
+  content: string;
+  fileDetails: Array<{ path: string; size: number }>;
+}
+
+export default function SkillsPage() {
+  const [skills, setSkills] = useState<SkillMeta[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [detail, setDetail] = useState<SkillDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Editor
+  const [edContent, setEdContent] = useState('');
+  const [isNew, setIsNew] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  // New skill form
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+
+  const fetchSkills = useCallback(async () => {
+    try {
+      const res = await fetch('/api/skills');
+      const data = await res.json();
+      setSkills(data.skills || []);
+    } catch { setError('Failed to load skills'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSkills(); }, [fetchSkills]);
+
+  const selectSkill = async (name: string) => {
+    setSelected(name);
+    setIsNew(false);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch(`/api/skills?name=${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (data.skill) {
+        setDetail(data.skill);
+        setEdContent(data.skill.content);
+        setDirty(false);
+      }
+    } catch { setError('Failed to load skill'); }
+  };
+
+  const startNew = () => {
+    setSelected(null);
+    setDetail(null);
+    setIsNew(true);
+    setNewName('');
+    setNewDesc('');
+    setEdContent('');
+    setDirty(false);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleCreate = async () => {
+    if (!newName.trim()) { setError('Name is required (kebab-case)'); return; }
+    if (!newDesc.trim()) { setError('Description is required'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newName.trim(),
+          description: newDesc.trim(),
+          content: edContent.trim() || undefined,
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      await fetchSkills();
+      setIsNew(false);
+      await selectSkill(newName.trim());
+      setSuccess('Created');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create');
+    } finally { setSaving(false); }
+  };
+
+  const handleSave = async () => {
+    if (!selected) return;
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/skills', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: selected, content: edContent }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      setDirty(false);
+      setSuccess('Saved');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (name: string) => {
+    try {
+      await fetch('/api/skills', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      setSkills(prev => prev.filter(s => s.name !== name));
+      if (selected === name) { setSelected(null); setDetail(null); setIsNew(false); }
+    } catch { setError('Failed to delete'); }
+  };
+
+  const handleDuplicate = async (name: string) => {
+    try {
+      const res = await fetch('/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'duplicate', name }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      const data = await res.json();
+      await fetchSkills();
+      await selectSkill(data.skill.name);
+      setSuccess('Duplicated');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to duplicate');
+    }
+  };
+
+  const handleExport = (name: string) => {
+    window.open(`/api/skills?export=${encodeURIComponent(name)}`, '_blank');
+  };
+
+  const hasEditor = isNew || selected;
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
+        <div className="flex items-center gap-3">
+          <h1 className="font-mono text-sm text-zinc-100">skills</h1>
+          <span className="text-[10px] font-mono text-zinc-600">~/.claude/skills/</span>
+          <Badge variant="outline" className="text-[9px] font-mono">{skills.length}</Badge>
+        </div>
+        <Button
+          onClick={startNew}
+          className="font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-7 px-3"
+        >
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          new skill
+        </Button>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-[260px] flex-shrink-0 border-r border-zinc-800 overflow-y-auto bg-zinc-950/50">
+          {loading ? (
+            <div className="p-4 text-xs font-mono text-zinc-700 animate-pulse text-center">loading...</div>
+          ) : skills.length === 0 && !isNew ? (
+            <div className="p-4 text-xs font-mono text-zinc-700 text-center">
+              no skills found<br />
+              <span className="text-zinc-600">create one with + new skill</span>
+            </div>
+          ) : (
+            <div className="py-1">
+              {skills.map((skill) => (
+                <button
+                  key={skill.name}
+                  onClick={() => selectSkill(skill.name)}
+                  className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 transition-colors group ${
+                    selected === skill.name
+                      ? 'bg-zinc-800/80 text-zinc-100'
+                      : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                  }`}
+                >
+                  <Zap className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${selected === skill.name ? 'text-amber-400' : 'text-zinc-600'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono text-xs truncate">{skill.name}</div>
+                    <div className="font-mono text-[10px] text-zinc-600 line-clamp-2 mt-0.5">{skill.description}</div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {skill.hasScripts && <Badge variant="outline" className="text-[8px] font-mono py-0 h-4">scripts</Badge>}
+                      {skill.hasReferences && <Badge variant="outline" className="text-[8px] font-mono py-0 h-4">refs</Badge>}
+                      {skill.hasAssets && <Badge variant="outline" className="text-[8px] font-mono py-0 h-4">assets</Badge>}
+                      {skill.metadata?.version && (
+                        <span className="text-[9px] font-mono text-zinc-700">v{skill.metadata.version}</span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Editor */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {!hasEditor ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-sm">
+                <Zap className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
+                <p className="font-mono text-sm text-zinc-500">select a skill to edit</p>
+                <p className="font-mono text-[10px] text-zinc-700 mt-2 leading-relaxed">
+                  skills are folders with a SKILL.md that teach Claude reusable workflows.
+                  they load automatically when relevant and persist across conversations.
+                </p>
+              </div>
+            </div>
+          ) : isNew ? (
+            /* New skill form */
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="max-w-xl space-y-4">
+                <h2 className="font-mono text-sm text-zinc-200">create new skill</h2>
+
+                <div className="space-y-1.5">
+                  <Label className="font-mono text-[10px] text-zinc-500">name (kebab-case)</Label>
+                  <Input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                    placeholder="my-skill-name"
+                    className="font-mono text-sm h-8 bg-zinc-900 border-zinc-700 text-zinc-100"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="font-mono text-[10px] text-zinc-500">
+                    description <span className="text-zinc-700">(what it does + when to trigger)</span>
+                  </Label>
+                  <Textarea
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    placeholder='Manages sprint planning in Linear. Use when user says "plan sprint", "create tasks", or "sprint planning".'
+                    className="font-mono text-sm bg-zinc-900 border-zinc-700 text-zinc-100 resize-none h-20"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="font-mono text-[10px] text-zinc-500">
+                    instructions <span className="text-zinc-700">(SKILL.md body — optional, can edit after)</span>
+                  </Label>
+                  <Textarea
+                    value={edContent}
+                    onChange={(e) => setEdContent(e.target.value)}
+                    placeholder={"# My Skill\n\n## Instructions\n\n### Step 1: ...\nClear explanation of what happens.\n\n### Step 2: ...\n..."}
+                    className="font-mono text-sm bg-zinc-900 border-zinc-700 text-zinc-100 resize-none"
+                    style={{ minHeight: '250px' }}
+                    spellCheck={false}
+                  />
+                </div>
+
+                {error && <p className="text-xs font-mono text-red-400">{error}</p>}
+
+                <Button
+                  onClick={handleCreate}
+                  disabled={saving || !newName.trim() || !newDesc.trim()}
+                  className="font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-8 px-4"
+                >
+                  {saving ? 'creating...' : 'create skill'}
+                </Button>
+              </div>
+            </div>
+          ) : detail ? (
+            /* Edit existing skill */
+            <>
+              {/* Toolbar */}
+              <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/50">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xs text-zinc-300">{detail.name}/</span>
+                  <span className="font-mono text-[10px] text-zinc-600">SKILL.md</span>
+                  {dirty && <span className="text-[10px] font-mono text-amber-500">unsaved</span>}
+                  {success && <span className="text-[10px] font-mono text-emerald-400">{success}</span>}
+                  {error && <span className="text-[10px] font-mono text-red-400">{error}</span>}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="ghost" onClick={() => handleExport(detail.name)} className="h-7 px-2 text-zinc-500 hover:text-zinc-300" title="Export .md">
+                    <Download className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button variant="ghost" onClick={() => handleDuplicate(detail.name)} className="h-7 px-2 text-zinc-500 hover:text-zinc-300" title="Duplicate">
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button variant="ghost" onClick={() => handleDelete(detail.name)} className="h-7 px-2 text-zinc-500 hover:text-red-400" title="Delete">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    disabled={saving || !dirty}
+                    className="font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-7 px-3 disabled:opacity-50"
+                  >
+                    <Save className="w-3.5 h-3.5 mr-1" />
+                    {saving ? 'saving...' : 'save'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex-1 flex overflow-hidden">
+                {/* Main editor */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <Textarea
+                    value={edContent}
+                    onChange={(e) => { setEdContent(e.target.value); setDirty(true); }}
+                    className="flex-1 w-full font-mono text-sm bg-[#0a0a0a] text-zinc-200 border-0 rounded-none resize-none p-4 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    spellCheck={false}
+                  />
+                </div>
+
+                {/* Side panel — skill info */}
+                <div className="w-[220px] flex-shrink-0 border-l border-zinc-800 overflow-y-auto bg-zinc-950/50 p-3 space-y-4">
+                  {/* Metadata */}
+                  <div>
+                    <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider mb-1.5">metadata</p>
+                    <div className="space-y-1 text-[10px] font-mono">
+                      {detail.metadata?.author && (
+                        <div className="flex justify-between"><span className="text-zinc-600">author</span><span className="text-zinc-400">{detail.metadata.author}</span></div>
+                      )}
+                      {detail.metadata?.version && (
+                        <div className="flex justify-between"><span className="text-zinc-600">version</span><span className="text-zinc-400">{detail.metadata.version}</span></div>
+                      )}
+                      {detail.license && (
+                        <div className="flex justify-between"><span className="text-zinc-600">license</span><span className="text-zinc-400">{detail.license}</span></div>
+                      )}
+                      {detail.compatibility && (
+                        <div><span className="text-zinc-600">compat</span><p className="text-zinc-500 mt-0.5">{detail.compatibility}</p></div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Files */}
+                  <div>
+                    <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider mb-1.5">files</p>
+                    <div className="space-y-1">
+                      {detail.fileDetails.map((f) => {
+                        const name = f.path.split('/').pop() || f.path;
+                        const isDir = name.endsWith('/');
+                        const Icon = name === 'SKILL.md' ? FileText
+                          : f.path.includes('scripts') ? Code2
+                          : f.path.includes('references') ? BookOpen
+                          : Package;
+                        return (
+                          <div key={f.path} className="flex items-center gap-1.5 text-[10px] font-mono">
+                            <Icon className="w-3 h-3 text-zinc-700 flex-shrink-0" />
+                            <span className="text-zinc-500 truncate flex-1">{f.path}</span>
+                            {!isDir && <span className="text-zinc-700">{(f.size / 1024).toFixed(1)}k</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Quick ref */}
+                  <div>
+                    <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider mb-1.5">invoke</p>
+                    <code className="text-[10px] font-mono text-amber-400/70 bg-zinc-900 px-2 py-1 rounded block">/{detail.name}</code>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
