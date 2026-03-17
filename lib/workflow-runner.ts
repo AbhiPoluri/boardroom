@@ -77,19 +77,29 @@ function waitForAgent(agentId: string, timeoutMs = 600_000): Promise<string> {
   });
 }
 
-/** Extract the output of a completed agent (summary or last N log lines) */
+/** Extract the output of a completed agent (stdout logs preferred, summary fallback) */
 function extractAgentOutput(agentId: string): string {
-  // Prefer summary if available
-  const summary = getAgentSummary(agentId) as { summary?: string } | undefined;
-  if (summary?.summary) return summary.summary;
-
-  // Fall back to last stdout logs
+  // Prefer actual stdout logs — they contain the agent's real output
   const logs = getLogsForAgent(agentId, 500);
   const stdoutLines = logs
     .filter((l: any) => l.stream === 'stdout')
     .map((l: any) => l.content)
-    .slice(-50); // Last 50 lines
-  return stdoutLines.join('\n').slice(-4000); // Cap at 4k chars
+    .filter((line: string) => {
+      // Filter out TUI noise: single chars, spinners, status fragments
+      const trimmed = line.trim();
+      return trimmed.length > 3 && !/^[✻✶✳⎿│─┃┗┛┓┏▸▹●○◉◎⚡↓↑→←…]+$/.test(trimmed);
+    })
+    .slice(-50);
+
+  if (stdoutLines.length > 0) {
+    return stdoutLines.join('\n').slice(-4000);
+  }
+
+  // Fall back to summary
+  const summary = getAgentSummary(agentId) as { summary?: string } | undefined;
+  if (summary?.summary) return summary.summary;
+
+  return '';
 }
 
 /** Build context string from upstream step outputs for injection into a step's task */
@@ -124,16 +134,33 @@ function buildUpstreamContext(
 /** Parse router output to determine which route to take */
 function parseRouterOutput(output: string, routes: string[]): string | null {
   const lower = output.toLowerCase();
-  // Check if any route name appears in the output
+
+  // 1. Exact route name match
   for (const route of routes) {
     if (lower.includes(route.toLowerCase())) return route;
   }
-  // Check for "route: xxx" pattern
+
+  // 2. Partial match — "feature" matches "feature-review", "bug-fix" matches "bug-fix-review"
+  for (const route of routes) {
+    const parts = route.toLowerCase().split('-');
+    // Check if any significant part of the route name appears in the output
+    for (const part of parts) {
+      if (part.length >= 3 && lower.includes(part)) return route;
+    }
+  }
+
+  // 3. Explicit "route: xxx" pattern
   const match = output.match(/route:\s*(\S+)/i);
   if (match) {
-    const found = routes.find(r => r.toLowerCase() === match[1].toLowerCase());
-    if (found) return found;
+    const target = match[1].toLowerCase();
+    // Exact match
+    const exact = routes.find(r => r.toLowerCase() === target);
+    if (exact) return exact;
+    // Partial match
+    const partial = routes.find(r => r.toLowerCase().includes(target) || target.includes(r.toLowerCase()));
+    if (partial) return partial;
   }
+
   return null;
 }
 
