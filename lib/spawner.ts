@@ -41,7 +41,9 @@ export interface SpawnOptions {
 }
 
 export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; worktreePath: string }> {
-  const { agentId, name, type, task, repo, model, existingWorktreePath, useGitIsolation = false } = opts;
+  const { agentId, name, type, task, repo, model, existingWorktreePath } = opts;
+  // Default: use git isolation when a repo is provided (each agent gets its own branch)
+  const useGitIsolation = opts.useGitIsolation ?? !!repo;
 
   insertLog(agentId, 'system', `Agent "${name}" starting up (type: ${type})`);
 
@@ -243,6 +245,34 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
           }
         }
       } catch {}
+
+      // Auto-create push request if agent used git isolation and has commits
+      if (useGitIsolation && repo && finalStatus === 'done' && worktreePath !== repo) {
+        try {
+          const { execSync } = require('child_process');
+          const branch = `boardroom/${agentId}`;
+          const baseBranch = execSync(`git -C "${repo}" symbolic-ref --short HEAD`, { encoding: 'utf-8' }).trim();
+          // Check if agent made any commits on its branch
+          const commits = execSync(`git -C "${repo}" log ${baseBranch}..${branch} --oneline 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
+          if (commits) {
+            const changedFiles = execSync(`git -C "${repo}" diff --name-only ${baseBranch}...${branch} 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
+            const { createPushRequest } = require('./db');
+            const { v4: uuid4 } = require('uuid');
+            createPushRequest({
+              id: uuid4(),
+              agent_id: agentId,
+              agent_name: name,
+              branch,
+              base_branch: baseBranch,
+              summary: task.slice(0, 500),
+              changed_files_json: JSON.stringify(changedFiles.split('\n').filter(Boolean)),
+            });
+            insertLog(agentId, 'system', `Push request created: ${branch} → ${baseBranch} (${changedFiles.split('\n').filter(Boolean).length} files)`);
+          }
+        } catch (prErr) {
+          insertLog(agentId, 'system', `Could not auto-create push request: ${prErr instanceof Error ? prErr.message : String(prErr)}`);
+        }
+      }
 
       // Keep git worktrees alive so users can review diffs and merge
       // Only clean up plain dirs (no repo)
