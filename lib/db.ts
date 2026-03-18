@@ -160,7 +160,9 @@ function initSchema(db: Database.Database): void {
       started_at INTEGER NOT NULL,
       finished_at INTEGER,
       agent_ids_json TEXT,
-      error TEXT
+      error TEXT,
+      step_outputs_json TEXT,
+      agents_detail_json TEXT
     );
 
     CREATE TABLE IF NOT EXISTS cron_jobs (
@@ -205,6 +207,14 @@ function initSchema(db: Database.Database): void {
   } catch {
     // Column already exists — ignore
   }
+
+  // Migration: add step_outputs and agents_detail to workflow_runs
+  try {
+    db.exec(`ALTER TABLE workflow_runs ADD COLUMN step_outputs_json TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE workflow_runs ADD COLUMN agents_detail_json TEXT`);
+  } catch {}
 }
 
 // Agent queries
@@ -700,6 +710,21 @@ export function updateWorkflowRunAgents(id: string, agentIds: string[]): void {
   const db = getDb();
   db.prepare(`UPDATE workflow_runs SET agent_ids_json = ? WHERE id = ?`)
     .run(JSON.stringify(agentIds), id);
+}
+
+export function updateWorkflowRunDetail(
+  id: string,
+  agents: Array<{ stepName: string; agentId: string; status: string }>,
+  stepOutputs: Record<string, string>,
+): void {
+  const db = getDb();
+  db.prepare(`UPDATE workflow_runs SET agents_detail_json = ?, step_outputs_json = ? WHERE id = ?`)
+    .run(JSON.stringify(agents), JSON.stringify(stepOutputs), id);
+}
+
+export function getWorkflowRunById(id: string): any {
+  const db = getDb();
+  return db.prepare('SELECT * FROM workflow_runs WHERE id = ?').get(id);
 }
 
 export function getWorkflowRuns(workflowId: string): any[] {

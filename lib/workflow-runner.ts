@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
 import path from 'path';
-import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents } from './db';
+import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents, updateWorkflowRunDetail, getWorkflowRunById } from './db';
 import { spawnAgent } from './spawner';
 import type { AgentType } from '@/types';
 
@@ -55,17 +55,45 @@ function sanitize(s: string): string {
 }
 
 export function getWorkflowRun(runId: string) {
+  // Try in-memory first
   const run = activeRuns.get(runId);
-  if (!run) return null;
-  // Sanitize step outputs to remove TUI control characters
-  const cleanOutputs: Record<string, string> = {};
-  for (const [k, v] of Object.entries(run.stepOutputs)) {
-    cleanOutputs[k] = sanitize(v);
+  if (run) {
+    const cleanOutputs: Record<string, string> = {};
+    for (const [k, v] of Object.entries(run.stepOutputs)) {
+      cleanOutputs[k] = sanitize(v);
+    }
+    return {
+      ...run,
+      stepOutputs: cleanOutputs,
+      skippedSteps: Array.from(run.skippedSteps),
+    };
+  }
+
+  // Fall back to DB (survives hot reload)
+  const dbRun = getWorkflowRunById(runId);
+  if (!dbRun) return null;
+  let agents: Array<{ stepName: string; agentId: string; status: string }> = [];
+  let stepOutputs: Record<string, string> = {};
+  try { agents = JSON.parse(dbRun.agents_detail_json || '[]'); } catch {}
+  try { stepOutputs = JSON.parse(dbRun.step_outputs_json || '{}'); } catch {}
+  // If agents_detail is empty, build from agent_ids
+  if (agents.length === 0 && dbRun.agent_ids_json) {
+    try {
+      const ids: string[] = JSON.parse(dbRun.agent_ids_json);
+      agents = ids.map(id => {
+        const agent = getAgentById(id);
+        return { stepName: agent?.name?.replace('wf-', '') || '?', agentId: id, status: agent?.status || 'unknown' };
+      });
+    } catch {}
   }
   return {
-    ...run,
-    stepOutputs: cleanOutputs,
-    skippedSteps: Array.from(run.skippedSteps),
+    workflowName: dbRun.workflow_id,
+    steps: [],
+    agents,
+    currentStepIdx: 0,
+    status: dbRun.status,
+    stepOutputs,
+    skippedSteps: [],
   };
 }
 
@@ -399,6 +427,10 @@ export async function runWorkflow(
         );
 
         updateWorkflowRunAgents(runId, run.agents.map(a => a.agentId));
+        // Persist full detail to DB (survives hot reload)
+        const cleanOutputs: Record<string, string> = {};
+        for (const [k, v] of Object.entries(run.stepOutputs)) cleanOutputs[k] = sanitize(v);
+        updateWorkflowRunDetail(runId, run.agents, cleanOutputs);
 
         // Process results — handle evaluators and routers
         for (const { step, agentId, status } of results) {
