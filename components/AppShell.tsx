@@ -8,10 +8,11 @@ import { PtyTerminal } from '@/components/PtyTerminal';
 import {
   Terminal, PanelLeftClose, FileText, DollarSign,
   Workflow, Clock, ScrollText, Home, Code2, GitBranch,
-  GripHorizontal, Zap,
+  GripHorizontal, Zap, SquareCode,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
+  { href: '/workspace', icon: SquareCode, label: 'workspace' },
   { href: '/', icon: Home, label: 'fleet' },
   { href: '/configs', icon: FileText, label: 'agents' },
   { href: '/skills', icon: Zap, label: 'skills' },
