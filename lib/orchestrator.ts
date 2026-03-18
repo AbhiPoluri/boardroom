@@ -91,6 +91,10 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
   clearPtyChunks(ORCHESTRATOR_ID);
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const safeResolve = (val: CLIResult) => { if (!settled) { settled = true; resolve(val); } };
+    const safeReject = (err: Error) => { if (!settled) { settled = true; reject(err); } };
+
     const home = process.env.HOME || os.homedir();
     const nvmInit = `export NVM_DIR="${home}/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"`;
 
@@ -117,7 +121,7 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
 
     ptyProc.onExit(({ exitCode }) => {
       if (exitCode !== 0) {
-        reject(new Error(`claude CLI exited with code ${exitCode}: ${output.slice(0, 200)}`));
+        safeReject(new Error(`claude CLI exited with code ${exitCode}: ${output.slice(0, 200)}`));
         return;
       }
       try {
@@ -133,23 +137,17 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
           cache_write_tokens: parsed.usage.cache_creation_input_tokens || 0,
         } : undefined;
         const model = parsed.modelUsage ? Object.keys(parsed.modelUsage)[0] : undefined;
-        resolve({ text, usage, cost_usd: parsed.total_cost_usd, model });
+        safeResolve({ text, usage, cost_usd: parsed.total_cost_usd, model });
       } catch {
-        resolve({ text: output });
+        safeResolve({ text: output });
       }
     });
 
     // 3 minute timeout
-    let settled = false;
-    const originalResolve = resolve;
-    const originalReject = reject;
-    resolve = ((val: CLIResult) => { if (!settled) { settled = true; originalResolve(val); } }) as typeof resolve;
-    reject = ((err: Error) => { if (!settled) { settled = true; originalReject(err); } }) as typeof reject;
-
     setTimeout(() => {
       if (!settled) {
         try { ptyProc.kill(); } catch {}
-        reject(new Error('claude CLI timed out after 180s'));
+        safeReject(new Error('claude CLI timed out after 180s'));
       }
     }, 180000);
   });

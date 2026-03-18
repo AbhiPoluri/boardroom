@@ -12,8 +12,13 @@ function shouldRun(schedule: string, lastRun: number | null): boolean {
   try {
     const expr = CronExpressionParser.parse(schedule);
     const prev = expr.prev().getTime();
-    // If the most recent scheduled time is after the last run, it's due
-    if (!lastRun) return true;
+    // On first run, only fire if the job is actually due based on its schedule
+    // (not unconditionally — prevents immediate execution on creation)
+    if (!lastRun) {
+      // Only run if the previous scheduled time is within the last 2 minutes
+      // (i.e., a cron tick just passed)
+      return Date.now() - prev < 2 * 60 * 1000;
+    }
     return prev > lastRun;
   } catch {
     return false;

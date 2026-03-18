@@ -322,11 +322,14 @@ export function createTask(task: Task): void {
   `).run(task);
 }
 
+const ALLOWED_TASK_COLUMNS = new Set(['description', 'status', 'agent_id', 'result', 'depends_on', 'blocking']);
+
 export function updateTask(id: string, updates: Partial<Task>): void {
   const db = getDb();
-  const now = Date.now();
-  const fields = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
-  db.prepare(`UPDATE tasks SET ${fields} WHERE id = @id`).run({ ...updates, id });
+  const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_TASK_COLUMNS.has(k)));
+  if (Object.keys(safe).length === 0) return;
+  const fields = Object.keys(safe).map(k => `${k} = @${k}`).join(', ');
+  db.prepare(`UPDATE tasks SET ${fields} WHERE id = @id`).run({ ...safe, id });
 }
 
 // PTY chunk queries
@@ -338,6 +341,12 @@ export function insertPtyChunk(agentId: string, data: string): void {
 export function getPtyChunks(agentId: string, afterId = 0): { id: number; data: string }[] {
   const db = getDb();
   return db.prepare('SELECT id, data FROM pty_chunks WHERE agent_id = ? AND id > ? ORDER BY id ASC').all(agentId, afterId) as { id: number; data: string }[];
+}
+
+export function hasPtyChunks(agentId: string): boolean {
+  const db = getDb();
+  const row = db.prepare('SELECT 1 FROM pty_chunks WHERE agent_id = ? LIMIT 1').get(agentId);
+  return !!row;
 }
 
 export function clearPtyChunks(agentId: string): void {
@@ -354,8 +363,12 @@ export function cleanupOldPtyChunks(): void {
       SELECT id FROM agents WHERE status IN ('done', 'error', 'killed') AND created_at < ?
     )
   `).run(cutoff);
-  // Also trim logs older than 1 hour to prevent unbounded growth
-  db.prepare('DELETE FROM logs WHERE timestamp < ?').run(Date.now() - 60 * 60 * 1000);
+  // Trim logs older than 24 hours for finished agents only (preserve running agent logs)
+  db.prepare(`
+    DELETE FROM logs WHERE timestamp < ? AND agent_id IN (
+      SELECT id FROM agents WHERE status IN ('done', 'error', 'killed')
+    )
+  `).run(Date.now() - 24 * 60 * 60 * 1000);
 }
 
 // Chat history queries
@@ -595,7 +608,9 @@ export function deleteMemory(key: string) {
 // Search logs across all agents
 export function searchLogs(query: string, limit = 100) {
   const db = getDb();
-  return db.prepare(`SELECT l.*, a.name as agent_name FROM logs l JOIN agents a ON l.agent_id = a.id WHERE l.content LIKE ? ORDER BY l.timestamp DESC LIMIT ?`).all(`%${query}%`, limit);
+  const safeLimit = Math.max(1, Math.min(500, limit || 100));
+  const safeQuery = query.slice(0, 200);
+  return db.prepare(`SELECT l.*, a.name as agent_name FROM logs l JOIN agents a ON l.agent_id = a.id WHERE l.content LIKE ? ORDER BY l.timestamp DESC LIMIT ?`).all(`%${safeQuery}%`, safeLimit);
 }
 
 // Token usage by model
@@ -753,9 +768,13 @@ export function createCronJob(job: { id: string; name: string; schedule: string;
   ).run(job.id, job.name, job.schedule, job.task, job.agent_type || 'claude', job.model || 'sonnet', job.repo || null, now, now);
 }
 
+const ALLOWED_CRON_COLUMNS = new Set(['name', 'schedule', 'task', 'agent_type', 'model', 'repo', 'enabled']);
+
 export function updateCronJob(id: string, updates: Record<string, any>): void {
-  const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-  const values = Object.values(updates);
+  const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_CRON_COLUMNS.has(k)));
+  if (Object.keys(safe).length === 0) return;
+  const fields = Object.keys(safe).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(safe);
   getDb().prepare(`UPDATE cron_jobs SET ${fields}, updated_at = ? WHERE id = ?`).run(...values, Date.now(), id);
 }
 

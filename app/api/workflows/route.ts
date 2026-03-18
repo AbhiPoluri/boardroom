@@ -44,7 +44,9 @@ export async function POST(req: NextRequest) {
       const result = await runWorkflow(name || 'unnamed', steps, repo);
       return NextResponse.json({ ok: true, ...result });
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to run' }, { status: 429 });
+      const msg = err instanceof Error ? err.message : 'Failed to run';
+      const status = msg.includes('concurrent') || msg.includes('already running') ? 429 : 500;
+      return NextResponse.json({ error: msg }, { status });
     }
   }
 
@@ -84,8 +86,12 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { id } = await req.json();
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-  deleteWorkflow(id);
-  return NextResponse.json({ ok: true });
+  try {
+    const { id } = await req.json();
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+    deleteWorkflow(id);
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: 'id required in request body' }, { status: 400 });
+  }
 }

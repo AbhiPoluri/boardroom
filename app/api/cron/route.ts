@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     spawnAgent({
       agentId,
       name: agentName,
-      type: (job.agent_type || 'claude') as 'claude' | 'codex' | 'custom' | 'test',
+      type: (['claude', 'codex', 'custom', 'test'].includes(job.agent_type) ? job.agent_type : 'claude') as 'claude' | 'codex' | 'custom' | 'test',
       task: job.task,
       repo: job.repo || undefined,
       model: job.model || 'sonnet',

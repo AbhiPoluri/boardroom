@@ -31,8 +31,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { key } = await req.json();
-  if (!key) return NextResponse.json({ error: 'key required' }, { status: 400 });
-  deleteMemory(key);
-  return NextResponse.json({ ok: true });
+  try {
+    const { key } = await req.json();
+    if (!key) return NextResponse.json({ error: 'key required' }, { status: 400 });
+    deleteMemory(key);
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: 'key required in request body' }, { status: 400 });
+  }
 }

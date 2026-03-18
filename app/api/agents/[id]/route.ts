@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAgentById, getLogsForAgent, updateAgentStatus, deleteAgent, getPtyChunks, getTokenUsageByAgent } from '@/lib/db';
+import { getAgentById, getLogsForAgent, updateAgentStatus, deleteAgent, hasPtyChunks, getTokenUsageByAgent } from '@/lib/db';
 import { killAgent, resumeAgent } from '@/lib/spawner';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,7 @@ export async function GET(
       return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
     }
     const logs = getLogsForAgent(id, 500);
-    const hasPty = getPtyChunks(id, 0).length > 0;
+    const hasPty = hasPtyChunks(id);
     const tokens = getTokenUsageByAgent(id);
     return NextResponse.json({ agent, logs, hasPty, tokens });
   } catch (err) {
