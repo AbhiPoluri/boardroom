@@ -1,0 +1,17 @@
+services:
+  boardroom:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - boardroom-data:/data
+    environment:
+      - DB_PATH=/data/boardroom.db
+      - PORT=3000
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - BOARDROOM_API_KEY=${BOARDROOM_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  boardroom-data:

@@ -706,7 +706,7 @@ function EndpointCard({ ep, baseUrl }: { ep: Endpoint; baseUrl: string }) {
 }
 
 export default function ApiDocsPage() {
-  const [baseUrl, setBaseUrl] = useState('http://localhost:7391');
+  const [baseUrl, setBaseUrl] = useState(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
   const [expandedGroup, setExpandedGroup] = useState<string | null>('agents');
 
   const totalEndpoints = API_GROUPS.reduce((sum, g) => sum + g.endpoints.length, 0);

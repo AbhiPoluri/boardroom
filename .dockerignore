@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+.git
+*.md
+.env.local
+.boardroom.db
+.boardroom.db-wal
+.boardroom.db-shm
