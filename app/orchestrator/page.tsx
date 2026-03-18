@@ -169,7 +169,7 @@ export default function OrchestratorPage() {
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('terminal');
+  const [viewMode, setViewMode] = useState<ViewMode>('turns');
   const [isActive, setIsActive] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

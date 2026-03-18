@@ -28,6 +28,7 @@ export default function AgentPage({ params }: AgentPageProps) {
   const [hasPty, setHasPty] = useState(false);
   const [infoExpanded, setInfoExpanded] = useState(true);
   const [tokens, setTokens] = useState<{ input_tokens: number; output_tokens: number; cost_usd: number } | null>(null);
+  const [agentSummary, setAgentSummary] = useState<string | null>(null);
 
   const fetchAgent = useCallback(async () => {
     try {
@@ -53,6 +54,21 @@ export default function AgentPage({ params }: AgentPageProps) {
       setLoading(false);
     }
   }, [id, initialLogs.length]);
+
+  // Fetch summary when agent is done/error and has no logs
+  useEffect(() => {
+    if (!agent) return;
+    const isTerminal = ['done', 'error', 'killed'].includes(agent.status);
+    if (!isTerminal || initialLogs.length > 0 || agentSummary !== null) return;
+    fetch(`/api/summaries`)
+      .then(r => r.json())
+      .then(data => {
+        const match = (data.summaries || []).find((s: { agent_id: string; summary?: string }) => s.agent_id === id);
+        if (match?.summary) setAgentSummary(match.summary);
+        else setAgentSummary('');
+      })
+      .catch(() => setAgentSummary(''));
+  }, [agent, id, initialLogs.length, agentSummary]);
 
   useEffect(() => {
     fetchAgent();
@@ -148,6 +164,19 @@ export default function AgentPage({ params }: AgentPageProps) {
             <StatusBadge status={agent.status} />
           </div>
           <div className="flex gap-2">
+            {agent.repo && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  localStorage.setItem('boardroom:workspace-repo', agent.repo!);
+                  router.push('/workspace');
+                }}
+                className="font-mono text-xs border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                open in workspace
+              </Button>
+            )}
             {isActive && (
               <Button
                 variant="outline"
@@ -227,7 +256,13 @@ export default function AgentPage({ params }: AgentPageProps) {
         {agent.type === 'claude' && hasPty ? (
           <PtyTerminal agentId={id} isActive={isActive} />
         ) : (
-          <LogViewer agentId={id} initialLogs={initialLogs} />
+          <LogViewer
+            agentId={id}
+            initialLogs={initialLogs}
+            agentStatus={agent.status}
+            summary={agentSummary}
+            agentTask={agent.task}
+          />
         )}
       </div>
 

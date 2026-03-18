@@ -7,6 +7,9 @@ import type { Log, LogStream } from '@/types';
 interface LogViewerProps {
   agentId: string;
   initialLogs?: Log[];
+  agentStatus?: string;
+  summary?: string | null;
+  agentTask?: string;
 }
 
 const streamColors: Record<LogStream, string> = {
@@ -19,7 +22,7 @@ function formatTimestamp(ts: number): string {
   return new Date(ts).toISOString().slice(11, 23);
 }
 
-export function LogViewer({ agentId, initialLogs = [] }: LogViewerProps) {
+export function LogViewer({ agentId, initialLogs = [], agentStatus, summary, agentTask }: LogViewerProps) {
   const [logs, setLogs] = useState<Log[]>(initialLogs);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +57,12 @@ export function LogViewer({ agentId, initialLogs = [] }: LogViewerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const isTerminal = ['done', 'error', 'killed'].includes(agentStatus || '');
+
   useEffect(() => {
+    // Don't connect SSE for completed agents
+    if (isTerminal) return;
+
     let es: EventSource;
 
     const connect = () => {
@@ -99,7 +107,7 @@ export function LogViewer({ agentId, initialLogs = [] }: LogViewerProps) {
       es?.close();
       esRef.current = null;
     };
-  }, [agentId]);
+  }, [agentId, isTerminal]);
 
   return (
     <div className="flex flex-col h-full">
@@ -112,7 +120,7 @@ export function LogViewer({ agentId, initialLogs = [] }: LogViewerProps) {
             }`}
           />
           <span className="text-xs font-mono text-zinc-600">
-            {connected ? 'live' : 'reconnecting...'}
+            {isTerminal ? 'agent completed' : connected ? 'live' : 'reconnecting...'}
           </span>
         </div>
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -166,7 +174,26 @@ export function LogViewer({ agentId, initialLogs = [] }: LogViewerProps) {
         style={{ minHeight: 0 }}
       >
         {logs.length === 0 ? (
-          <div className="text-zinc-600 italic">waiting for output...</div>
+          isTerminal ? (
+            <div className="space-y-3">
+              {agentTask && (
+                <div>
+                  <div className="text-zinc-600 uppercase tracking-wider text-[10px] mb-1">Task</div>
+                  <div className="text-zinc-300">{agentTask}</div>
+                </div>
+              )}
+              {summary ? (
+                <div>
+                  <div className="text-zinc-600 uppercase tracking-wider text-[10px] mb-1">Summary</div>
+                  <div className="text-zinc-300 whitespace-pre-wrap">{summary}</div>
+                </div>
+              ) : (
+                <div className="text-zinc-600 italic">no logs recorded</div>
+              )}
+            </div>
+          ) : (
+            <div className="text-zinc-600 italic">waiting for output...</div>
+          )
         ) : (
           logs
             .filter(log => !searchQuery || log.content.toLowerCase().includes(searchQuery.toLowerCase()))
