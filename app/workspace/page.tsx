@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   FolderOpen, File, ChevronRight, ChevronDown, GitBranch,
   Play, Check, X, MessageSquare, RefreshCw, Home,
-  FileCode, Diff, GitPullRequest, Bot, Send,
+  FileCode, Diff, GitPullRequest, Bot, Send, GripHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -142,12 +142,38 @@ export default function WorkspacePage() {
 
   const [recentRepos, setRecentRepos] = useState<string[]>([]);
 
+  // Feature 1: file tree search
+  const [fileSearch, setFileSearch] = useState('');
+
+  // Feature 3: resizable chat panel
+  const [chatPanelHeight, setChatPanelHeight] = useState(220);
+  const chatDragRef = useRef<{ startY: number; startH: number } | null>(null);
+
   // Browse state
   const [browsing, setBrowsing] = useState(false);
   const [browseDir, setBrowseDir] = useState('');
   const [browseEntries, setBrowseEntries] = useState<Array<{ name: string; path: string; isGit: boolean }>>([]);
   const [browseIsGit, setBrowseIsGit] = useState(false);
   const [browseParent, setBrowseParent] = useState<string | null>(null);
+
+  // Feature 3: drag handlers for resizable chat panel
+  const onChatDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    chatDragRef.current = { startY: e.clientY, startH: chatPanelHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!chatDragRef.current) return;
+      const delta = chatDragRef.current.startY - ev.clientY;
+      const newH = Math.min(500, Math.max(120, chatDragRef.current.startH + delta));
+      setChatPanelHeight(newH);
+    };
+    const onUp = () => {
+      chatDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   // Load recent repos + last open repo from localStorage
   useEffect(() => {
@@ -158,6 +184,21 @@ export default function WorkspacePage() {
       if (lastRepo) { setRepo(lastRepo); setRepoInput(lastRepo); }
     } catch {}
   }, []);
+
+  // Load chat messages from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('boardroom:workspace-chat');
+      if (stored) setChatMessages(JSON.parse(stored));
+    } catch {}
+  }, []);
+
+  // Save chat messages to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('boardroom:workspace-chat', JSON.stringify(chatMessages));
+    } catch {}
+  }, [chatMessages]);
 
   const browseTo = async (dir?: string) => {
     const params = dir ? `?dir=${encodeURIComponent(dir)}` : '';
@@ -387,14 +428,18 @@ export default function WorkspacePage() {
 
   // ─── Render helpers ──────────────────────────────────────────────────────
 
-  const renderTree = (items: FileEntry[], depth = 0) => (
+  const renderTree = (items: FileEntry[], depth = 0, search = '') => {
+    const filtered = search
+      ? items.filter(e => e.name.toLowerCase().includes(search.toLowerCase()))
+      : items;
+    return (
     <div>
-      {items.map((entry) => (
+      {filtered.map((entry) => (
         <div key={entry.path}>
           <button
             onClick={() => entry.type === 'directory' ? toggleDir(entry.path) : openFile(entry.path)}
             className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-[11px] font-mono hover:bg-zinc-800/60 transition-colors ${
-              activeFile?.path === entry.path ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'
+              activeFile?.path === entry.path && activeTab === 'code' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'
             }`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
           >
@@ -416,12 +461,13 @@ export default function WorkspacePage() {
             )}
           </button>
           {entry.type === 'directory' && expandedDirs.has(entry.path) && dirContents[entry.path] && (
-            renderTree(dirContents[entry.path], depth + 1)
+            renderTree(dirContents[entry.path], depth + 1, search)
           )}
         </div>
       ))}
     </div>
-  );
+    );
+  };
 
   const renderDiffFile = (file: DiffFile) => (
     <div key={file.path} className="mb-4">
@@ -649,7 +695,15 @@ export default function WorkspacePage() {
               <RefreshCw className="w-3 h-3" />
             </button>
           </div>
-          {entries.length > 0 ? renderTree(entries) : (
+          <div className="px-2 pb-1.5">
+            <input
+              value={fileSearch}
+              onChange={(e) => setFileSearch(e.target.value)}
+              placeholder="search files..."
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-400 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-600"
+            />
+          </div>
+          {entries.length > 0 ? renderTree(entries, 0, fileSearch) : (
             <div className="px-3 py-4 text-[10px] font-mono text-zinc-700 text-center">loading...</div>
           )}
 
@@ -845,25 +899,47 @@ export default function WorkspacePage() {
                     <div className="px-2 mb-1">
                       <span className="text-[8px] font-mono text-zinc-700 uppercase px-1">this repo</span>
                       {repoAgents.map(a => (
-                        <a key={a.id} href={`/agents/${a.id}`} className="block px-2 py-2 rounded-lg hover:bg-zinc-900 transition-colors mb-0.5">
+                        <div key={a.id} className="px-2 py-2 rounded-lg hover:bg-zinc-900 transition-colors mb-0.5">
                           <div className="flex items-center gap-2">
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                              a.status === 'running' ? 'bg-emerald-400 animate-pulse'
-                                : a.status === 'done' ? 'bg-emerald-400'
-                                : a.status === 'error' || a.status === 'killed' ? 'bg-red-400'
-                                : a.status === 'spawning' ? 'bg-blue-400 animate-pulse'
-                                : 'bg-zinc-600'
-                            }`} />
-                            <span className="font-mono text-[10px] text-zinc-300 truncate">{a.name}</span>
-                            <span className={`text-[8px] font-mono ml-auto ${
-                              a.status === 'running' ? 'text-emerald-400'
-                                : a.status === 'done' ? 'text-zinc-600'
-                                : a.status === 'error' ? 'text-red-400'
-                                : 'text-zinc-600'
-                            }`}>{a.status}</span>
+                            <a href={`/agents/${a.id}`} className="flex items-center gap-2 flex-1 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                a.status === 'running' ? 'bg-emerald-400 animate-pulse'
+                                  : a.status === 'done' ? 'bg-emerald-400'
+                                  : a.status === 'error' || a.status === 'killed' ? 'bg-red-400'
+                                  : a.status === 'spawning' ? 'bg-blue-400 animate-pulse'
+                                  : 'bg-zinc-600'
+                              }`} />
+                              <span className="font-mono text-[10px] text-zinc-300 truncate">{a.name}</span>
+                              <span className={`text-[8px] font-mono ml-auto ${
+                                a.status === 'running' ? 'text-emerald-400'
+                                  : a.status === 'done' ? 'text-zinc-600'
+                                  : a.status === 'error' ? 'text-red-400'
+                                  : 'text-zinc-600'
+                              }`}>{a.status}</span>
+                            </a>
+                            {a.status === 'running' && (
+                              <button
+                                onClick={async (e) => { e.preventDefault(); await fetch(`/api/agents/${a.id}`, { method: 'DELETE' }); fetchAgents(); }}
+                                className="flex-shrink-0 text-red-400/70 hover:text-red-400 px-0.5 py-0.5 rounded border border-red-500/20 hover:border-red-500/40 transition-colors"
+                                title="kill agent"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                            {a.status === 'done' && (
+                              <button
+                                onClick={(e) => { e.preventDefault(); viewRepoDiff(); }}
+                                className="flex-shrink-0 text-[8px] font-mono text-zinc-500 hover:text-zinc-300 px-1 py-0.5 rounded border border-zinc-700/30 hover:border-zinc-600/50 transition-colors"
+                                title="view diff"
+                              >
+                                diff
+                              </button>
+                            )}
                           </div>
-                          <p className="font-mono text-[9px] text-zinc-600 mt-0.5 pl-3.5 line-clamp-2">{a.task}</p>
-                        </a>
+                          <a href={`/agents/${a.id}`}>
+                            <p className="font-mono text-[9px] text-zinc-600 mt-0.5 pl-3.5 line-clamp-2">{a.task}</p>
+                          </a>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -910,7 +986,15 @@ export default function WorkspacePage() {
 
       {/* Workspace orchestrator chat */}
       {chatOpen && (
-        <div className="flex-shrink-0 border-t border-zinc-800 bg-zinc-950/60" style={{ height: '220px' }}>
+        <>
+          {/* Drag handle */}
+          <div
+            onMouseDown={onChatDragStart}
+            className="flex-shrink-0 h-2 border-t border-zinc-800 bg-zinc-950/80 flex items-center justify-center cursor-row-resize hover:bg-zinc-800/60 group transition-colors"
+          >
+            <GripHorizontal className="w-4 h-3 text-zinc-800 group-hover:text-zinc-600 transition-colors" />
+          </div>
+        <div className="flex-shrink-0 border-t border-zinc-800 bg-zinc-950/60" style={{ height: `${chatPanelHeight}px` }}>
           <div className="flex flex-col h-full">
             {/* Chat header */}
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-zinc-800/50">
@@ -926,7 +1010,7 @@ export default function WorkspacePage() {
                 </button>
               )}
               <button
-                onClick={() => { setChatMessages([]); }}
+                onClick={() => { setChatMessages([]); localStorage.removeItem('boardroom:workspace-chat'); }}
                 className="ml-auto text-[9px] font-mono text-zinc-700 hover:text-zinc-400"
               >
                 clear
@@ -1026,6 +1110,7 @@ export default function WorkspacePage() {
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   );

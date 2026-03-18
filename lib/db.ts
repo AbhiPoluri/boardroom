@@ -823,7 +823,11 @@ export function getPushRequests(status?: string, limit = 50): any[] {
 }
 
 export function getPushRequest(id: string): any {
-  return getDb().prepare('SELECT * FROM push_requests WHERE id = ?').get(id);
+  const db = getDb();
+  const pr = db.prepare('SELECT * FROM push_requests WHERE id = ?').get(id);
+  if (pr) return pr;
+  // Try prefix match
+  return db.prepare('SELECT * FROM push_requests WHERE id LIKE ? ORDER BY created_at DESC LIMIT 1').get(id + '%');
 }
 
 export function getPendingPushRequestsCount(): number {
