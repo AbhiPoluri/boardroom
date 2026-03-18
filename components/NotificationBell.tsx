@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, CheckCircle, XCircle, CheckCheck } from 'lucide-react';
 
 interface Notification {
   id: number;
@@ -10,6 +10,14 @@ interface Notification {
   body: string | null;
   read: number;
   created_at: number;
+}
+
+function relativeTime(ts: number): string {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 export function NotificationBell() {
@@ -52,12 +60,21 @@ export function NotificationBell() {
   };
 
   const typeColor: Record<string, string> = {
-    agent_done: 'text-emerald-400',
+    agent_done: 'text-blue-400',
     agent_error: 'text-red-400',
     agent_idle: 'text-amber-400',
+    push_approved: 'text-emerald-400',
+    push_rejected: 'text-red-400',
     merge_complete: 'text-blue-400',
     workflow_done: 'text-purple-400',
     system: 'text-zinc-400',
+  };
+
+  const TypeIcon = ({ type }: { type: string }) => {
+    if (type === 'push_approved') return <CheckCircle className="w-3 h-3 text-emerald-400 flex-shrink-0" />;
+    if (type === 'push_rejected') return <XCircle className="w-3 h-3 text-red-400 flex-shrink-0" />;
+    if (type === 'agent_done') return <CheckCheck className="w-3 h-3 text-blue-400 flex-shrink-0" />;
+    return null;
   };
 
   return (
@@ -79,31 +96,44 @@ export function NotificationBell() {
           <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
             <span className="font-mono text-xs text-zinc-300">notifications</span>
             {unread > 0 && (
-              <button onClick={markAllRead} className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300">
-                mark all read
-              </button>
+              <span className="text-[9px] font-mono text-zinc-600">{unread} unread</span>
             )}
           </div>
           <div className="max-h-[320px] overflow-y-auto">
             {notifications.length === 0 ? (
               <div className="p-4 text-center text-xs font-mono text-zinc-700">no notifications</div>
             ) : (
-              notifications.slice(0, 20).map((n) => (
+              notifications.slice(0, 10).map((n) => (
                 <div
                   key={n.id}
                   className={`px-3 py-2 border-b border-zinc-800/50 ${n.read ? 'opacity-60' : ''} hover:bg-zinc-800/50 transition-colors`}
                 >
-                  <div className={`font-mono text-xs ${typeColor[n.type] || 'text-zinc-400'}`}>
-                    {n.title}
-                  </div>
-                  {n.body && <div className="font-mono text-[10px] text-zinc-600 mt-0.5">{n.body}</div>}
-                  <div className="font-mono text-[9px] text-zinc-700 mt-0.5">
-                    {new Date(n.created_at).toLocaleTimeString()}
+                  <div className="flex items-start gap-1.5">
+                    <TypeIcon type={n.type} />
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-mono text-xs ${typeColor[n.type] || 'text-zinc-400'} truncate`}>
+                        {n.title}
+                      </div>
+                      {n.body && <div className="font-mono text-[10px] text-zinc-600 mt-0.5 line-clamp-2">{n.body}</div>}
+                      <div className="font-mono text-[9px] text-zinc-700 mt-0.5">
+                        {relativeTime(n.created_at)}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))
             )}
           </div>
+          {notifications.length > 0 && (
+            <div className="px-3 py-2 border-t border-zinc-800">
+              <button
+                onClick={markAllRead}
+                className="w-full text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors text-center"
+              >
+                mark all read
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

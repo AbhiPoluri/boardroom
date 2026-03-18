@@ -920,6 +920,9 @@ export default function WorkspacePage() {
                       })}
                     </div>
                     <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-[9px] font-mono text-zinc-600">
+                        {(editedContent ?? activeFile.content).split('\n').length} lines
+                      </span>
                       {editedContent !== null && editedContent !== activeFile.content && (
                         <span className="text-[9px] font-mono text-amber-400">unsaved</span>
                       )}

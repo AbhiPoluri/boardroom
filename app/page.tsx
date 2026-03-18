@@ -260,7 +260,7 @@ export default function Dashboard() {
               {tokens.total_tokens > 0 && (
                 <span className="text-blue-400 flex items-center gap-1.5">
                   {formatTokens(tokens.total_tokens)} tok
-                  {velocity.length > 0 && <Sparkline data={velocity} width={60} height={16} color="#60a5fa" />}
+                  {velocity.length > 0 && <Sparkline data={velocity} width={60} height={16} color="#60a5fa" animate={hasActive} />}
                 </span>
               )}
             </div>

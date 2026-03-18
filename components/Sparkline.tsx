@@ -5,9 +5,10 @@ interface SparklineProps {
   width?: number;
   height?: number;
   color?: string;
+  animate?: boolean;
 }
 
-export function Sparkline({ data, width = 80, height = 20, color = '#34d399' }: SparklineProps) {
+export function Sparkline({ data, width = 80, height = 20, color = '#34d399', animate = false }: SparklineProps) {
   if (!data.length || data.every(d => d === 0)) {
     return (
       <svg width={width} height={height} className="opacity-30">
@@ -34,6 +35,9 @@ export function Sparkline({ data, width = 80, height = 20, color = '#34d399' }: 
   const lastX = padding + chartWidth;
   const areaD = `${pathD} L${lastX},${height} L${firstX},${height} Z`;
 
+  const dotCx = padding + chartWidth;
+  const dotCy = padding + chartHeight - (data[data.length - 1] / max) * chartHeight;
+
   return (
     <svg width={width} height={height} className="flex-shrink-0">
       <title>token velocity — last 30 min</title>
@@ -47,12 +51,15 @@ export function Sparkline({ data, width = 80, height = 20, color = '#34d399' }: 
       <path d={pathD} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
       {/* Current value dot */}
       {data.length > 0 && (
-        <circle
-          cx={padding + chartWidth}
-          cy={padding + chartHeight - (data[data.length - 1] / max) * chartHeight}
-          r={2}
-          fill={color}
-        />
+        <>
+          {animate && (
+            <circle cx={dotCx} cy={dotCy} r={4} fill={color} opacity={0.3}>
+              <animate attributeName="r" values="3;6;3" dur="1.8s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.3;0;0.3" dur="1.8s" repeatCount="indefinite" />
+            </circle>
+          )}
+          <circle cx={dotCx} cy={dotCy} r={2} fill={color} />
+        </>
       )}
     </svg>
   );
