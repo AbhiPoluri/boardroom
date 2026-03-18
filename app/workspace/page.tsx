@@ -134,6 +134,9 @@ export default function WorkspacePage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatStatus, setChatStatus] = useState('');
+  const [chatElapsed, setChatElapsed] = useState(0);
+  const chatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
 
@@ -309,6 +312,10 @@ export default function WorkspacePage() {
     setChatOpen(true);
     setChatMessages(prev => [...prev, { role: 'user', content: msg }]);
     setChatLoading(true);
+    setChatStatus('connecting to orchestrator...');
+    setChatElapsed(0);
+    if (chatTimerRef.current) clearInterval(chatTimerRef.current);
+    chatTimerRef.current = setInterval(() => setChatElapsed(prev => prev + 1), 1000);
 
     const controller = new AbortController();
     chatAbortRef.current = controller;
@@ -339,8 +346,8 @@ export default function WorkspacePage() {
           if (!line.startsWith('data: ')) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === 'text') assistantText += event.content;
-            if (event.type === 'tool_use') tools.push({ tool: event.tool });
+            if (event.type === 'text') { assistantText += event.content; setChatStatus('responding...'); }
+            if (event.type === 'tool_use') { tools.push({ tool: event.tool }); setChatStatus(`running ${event.tool}...`); }
             if (event.type === 'tool_result' && tools.length > 0) {
               tools[tools.length - 1].result = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
             }
@@ -366,6 +373,8 @@ export default function WorkspacePage() {
       }
     }
     setChatLoading(false);
+    setChatStatus('');
+    if (chatTimerRef.current) { clearInterval(chatTimerRef.current); chatTimerRef.current = null; }
     chatAbortRef.current = null;
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
@@ -615,8 +624,11 @@ export default function WorkspacePage() {
             }`}
           >
             <MessageSquare className="w-3 h-3" />
-            orchestrator
-            {chatLoading && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+            {chatLoading ? (
+              <span className="text-emerald-400">
+                {chatStatus} <span className="text-zinc-600">{chatElapsed}s</span>
+              </span>
+            ) : 'orchestrator'}
           </button>
         </div>
       </div>
@@ -947,8 +959,10 @@ export default function WorkspacePage() {
               ))}
               {chatLoading && (
                 <div className="flex justify-start">
-                  <div className="px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/50">
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/50">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                    <span className="text-[10px] font-mono text-zinc-500">{chatStatus}</span>
+                    <span className="text-[9px] font-mono text-zinc-700">{chatElapsed}s</span>
                   </div>
                 </div>
               )}
