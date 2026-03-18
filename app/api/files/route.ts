@@ -85,7 +85,13 @@ export async function GET(req: NextRequest) {
   } catch {}
   const annotated = entries.map(e => ({ ...e, gitStatus: gitStatus[e.path] || null }));
 
-  return NextResponse.json({ entries: annotated, path: filePath, repo });
+  // Return current branch name when listing repo root
+  let branch: string | null = null;
+  if (filePath === '') {
+    try { branch = execSync(`git -C "${repo}" rev-parse --abbrev-ref HEAD`, { encoding: 'utf-8' }).trim(); } catch {}
+  }
+
+  return NextResponse.json({ entries: annotated, path: filePath, repo, branch });
 }
 
 export async function PUT(req: NextRequest) {

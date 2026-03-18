@@ -275,6 +275,10 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
                 <span className="truncate text-zinc-500 leading-relaxed block">
                   {stripAnsi(agent.last_log)}
                 </span>
+              ) : agent.task ? (
+                <span className="truncate text-zinc-600 leading-relaxed block italic">
+                  {agent.task.length > 120 ? agent.task.slice(0, 120) + '…' : agent.task}
+                </span>
               ) : (
                 <span className="italic text-zinc-700">no logs</span>
               )

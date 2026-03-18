@@ -107,6 +107,7 @@ export default function WorkspacePage() {
   // State
   const [repo, setRepo] = useState('');
   const [repoInput, setRepoInput] = useState('');
+  const [repoBranch, setRepoBranch] = useState<string | null>(null);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentPath, setCurrentPath] = useState('');
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -237,6 +238,7 @@ export default function WorkspacePage() {
     if (data.entries) {
       if (dirPath === '') {
         setEntries(data.entries);
+        if (data.branch !== undefined) setRepoBranch(data.branch);
       }
       setDirContents(prev => ({ ...prev, [dirPath]: data.entries }));
     }
@@ -303,7 +305,7 @@ export default function WorkspacePage() {
   };
 
   // Save file via PUT
-  const saveFile = async () => {
+  const saveFile = useCallback(async () => {
     if (!activeFile || editedContent === null) return;
     setSaving(true);
     try {
@@ -323,7 +325,7 @@ export default function WorkspacePage() {
       }
     } catch {}
     setSaving(false);
-  };
+  }, [activeFile, editedContent, repo, activeFileIdx]);
 
   // Toggle directory
   const toggleDir = (dirPath: string) => {
@@ -345,6 +347,20 @@ export default function WorkspacePage() {
   };
 
   useEffect(() => { fetchPRs(); const iv = setInterval(fetchPRs, 10000); return () => clearInterval(iv); }, []);
+
+  // Cmd+S / Ctrl+S to save in edit mode
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (isEditing && editedContent !== null) {
+          saveFile();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isEditing, editedContent, saveFile]);
 
   // Toast notification when agents finish
   const [toast, setToast] = useState<{ msg: string; type: 'done' | 'error' } | null>(null);
@@ -736,6 +752,12 @@ export default function WorkspacePage() {
         <h1 className="font-mono text-sm text-zinc-100">workspace</h1>
         <Separator orientation="vertical" className="h-4" />
         <span className="font-mono text-[10px] text-zinc-500 truncate max-w-[300px]">{repo}</span>
+        {repoBranch && (
+          <span className="flex items-center gap-1 font-mono text-[10px] text-emerald-400/80 flex-shrink-0">
+            <GitBranch className="w-3 h-3" />
+            {repoBranch}
+          </span>
+        )}
 
         {/* Tabs */}
         <div className="flex items-center gap-1 ml-4">
