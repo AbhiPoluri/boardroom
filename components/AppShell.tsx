@@ -135,9 +135,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-screen flex overflow-hidden bg-[#0a0a0a]">
-      {/* Left: persistent orchestrator chat (collapsible) — hidden on workspace (has its own) */}
+      {/* Left: persistent orchestrator chat (collapsible) — hidden on workspace (has its own), hidden on mobile */}
       {pathname === '/workspace' ? null : chatOpen ? (
-        <div ref={panelRef} className="w-[420px] flex-shrink-0 border-r border-zinc-800 h-full flex flex-col">
+        <div ref={panelRef} className="hidden md:flex w-[420px] flex-shrink-0 border-r border-zinc-800 h-full flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 flex-shrink-0">
             <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
@@ -184,7 +184,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ) : pathname === '/workspace' ? null : (
         <button
           onClick={() => setChatOpen(true)}
-          className="w-10 flex-shrink-0 border-r border-zinc-800 flex flex-col items-center justify-center gap-2 hover:bg-zinc-900 transition-colors group"
+          className="hidden md:flex w-10 flex-shrink-0 border-r border-zinc-800 flex-col items-center justify-center gap-2 hover:bg-zinc-900 transition-colors group"
           title="Open chat"
         >
           <Terminal className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400" />
@@ -205,8 +205,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Right: nav + page content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Persistent nav bar */}
-        <nav className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm">
-          <div className="flex items-center gap-1">
+        <nav className="flex-shrink-0 flex items-center justify-between border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm overflow-x-auto">
+          <div className="flex items-center gap-1 px-4 py-2 flex-shrink-0">
             <span className="font-mono text-xs font-bold text-zinc-300 mr-3 tracking-tight">boardroom</span>
             {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
               const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -215,25 +215,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={href}
                   href={href}
                   aria-label={label}
-                  className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors ${
+                  className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors flex-shrink-0 ${
                     active
                       ? 'bg-zinc-800 text-zinc-100'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
                   }`}
                 >
                     <Icon className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">{label}</span>
+                    <span className="hidden md:inline">{label}</span>
                 </Link>
               );
             })}
           </div>
           <button
             onClick={() => { setCmdSearch(''); setCmdSelected(0); setCmdPaletteOpen(true); setTimeout(() => cmdInputRef.current?.focus(), 30); }}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-zinc-600 hover:text-zinc-400 hover:bg-zinc-900 transition-colors text-[11px] font-mono"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-zinc-600 hover:text-zinc-400 hover:bg-zinc-900 transition-colors text-[11px] font-mono flex-shrink-0"
             title="Command palette (⌘K)"
           >
             <Search className="w-3 h-3" />
-            <span className="hidden sm:inline">⌘K</span>
+            <span className="hidden md:inline">⌘K</span>
           </button>
         </nav>
 

@@ -5,7 +5,7 @@ import {
   FolderOpen, File, ChevronRight, ChevronDown, GitBranch,
   Play, Check, X, MessageSquare, RefreshCw, Home,
   FileCode, Diff, GitPullRequest, Bot, Send, GripHorizontal,
-  Pencil, Save,
+  Pencil, Save, Terminal, PanelLeftClose,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +48,76 @@ function langFromExt(ext: string): string {
   };
   return map[ext.toLowerCase()] || 'plaintext';
 }
+
+// ─── Syntax highlighter ──────────────────────────────────────────────────────
+
+function highlightLine(line: string, lang: string): React.ReactNode[] {
+  const KEYWORDS = new Set([
+    'function','const','let','var','return','if','else','for','while',
+    'import','export','from','class','interface','type','async','await',
+    'new','this','try','catch','throw','default','switch','case','break',
+    'continue','extends','implements','of','in','typeof','instanceof',
+    'void','never','any','boolean','string','number','null','undefined',
+    'true','false','static','public','private','protected','readonly',
+    'enum','namespace','module','declare','abstract','override',
+    // python
+    'def','lambda','with','as','pass','del','global','nonlocal','yield',
+    'and','or','not','is','elif','print','self',
+    // go/rust/etc
+    'fn','let','mut','use','mod','pub','struct','impl','trait','match',
+    'where','move','ref','dyn','Box','Vec','Option','Result','Some','None',
+    'Ok','Err','func','go','defer','select','chan','make','range','map',
+  ]);
+
+  // Token patterns in priority order
+  const TOKEN_RE = /(`[^`]*`|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(\/{2}.*)|(\b\d+(?:\.\d+)?\b)|([@]\w+)|(<\/?[\w][\w.-]*>?)|(===|!==|=>|&&|\|\||[=!<>+\-*\/%?])|([()[\]{}])|([\w]+)/g;
+
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = TOKEN_RE.exec(line)) !== null) {
+    // push any gap before this match as plain text
+    if (m.index > last) {
+      nodes.push(line.slice(last, m.index));
+    }
+    last = m.index + m[0].length;
+
+    const [full, str, comment, num, decorator, htmlTag, op, bracket, word] = m;
+
+    if (str) {
+      nodes.push(<span key={m.index} style={{ color: '#4ade80' }}>{full}</span>);
+    } else if (comment) {
+      nodes.push(<span key={m.index} style={{ color: '#71717a', fontStyle: 'italic' }}>{full}</span>);
+    } else if (num) {
+      nodes.push(<span key={m.index} style={{ color: '#fbbf24' }}>{full}</span>);
+    } else if (decorator) {
+      nodes.push(<span key={m.index} style={{ color: '#fbbf24' }}>{full}</span>);
+    } else if (htmlTag) {
+      nodes.push(<span key={m.index} style={{ color: '#22d3ee' }}>{full}</span>);
+    } else if (op) {
+      nodes.push(<span key={m.index} style={{ color: '#f87171' }}>{full}</span>);
+    } else if (bracket) {
+      nodes.push(<span key={m.index} style={{ color: '#a1a1aa' }}>{full}</span>);
+    } else if (word) {
+      if (KEYWORDS.has(word)) {
+        nodes.push(<span key={m.index} style={{ color: '#60a5fa' }}>{full}</span>);
+      } else if (/^[A-Z]/.test(word)) {
+        nodes.push(<span key={m.index} style={{ color: '#c084fc' }}>{full}</span>);
+      } else {
+        nodes.push(full);
+      }
+    } else {
+      nodes.push(full);
+    }
+  }
+
+  // trailing text after last match
+  if (last < line.length) nodes.push(line.slice(last));
+
+  return nodes;
+}
+
 
 // ─── Diff parser ─────────────────────────────────────────────────────────────
 
@@ -159,6 +229,15 @@ export default function WorkspacePage() {
   // Feature 3: resizable chat panel
   const [chatPanelHeight, setChatPanelHeight] = useState(220);
   const chatDragRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  // Agent terminal view
+  const [viewingAgentId, setViewingAgentId] = useState<string | null>(null);
+  const [agentLogs, setAgentLogs] = useState<Array<{ stream: string; content: string; timestamp: number }>>([]);
+  const agentLogsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const agentLogsEndRef = useRef<HTMLDivElement>(null);
+
+  // Mobile: file tree visibility
+  const [showFileTree, setShowFileTree] = useState(true);
 
   // Browse state
   const [browsing, setBrowsing] = useState(false);
@@ -451,6 +530,40 @@ export default function WorkspacePage() {
     } catch {}
     setSpawning(false);
   };
+
+  // Agent terminal: fetch logs and start/stop polling
+  const fetchAgentLogs = useCallback(async (agentId: string) => {
+    try {
+      const res = await fetch(`/api/agents/${agentId}`);
+      const data = await res.json();
+      if (data.agent?.logs) {
+        setAgentLogs(data.agent.logs);
+        setTimeout(() => agentLogsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      }
+      return data.agent?.status;
+    } catch {}
+  }, []);
+
+  const openAgentTerminal = useCallback(async (agentId: string) => {
+    setViewingAgentId(agentId);
+    setAgentLogs([]);
+    if (agentLogsPollRef.current) clearInterval(agentLogsPollRef.current);
+    const status = await fetchAgentLogs(agentId);
+    if (status === 'running' || status === 'spawning') {
+      agentLogsPollRef.current = setInterval(async () => {
+        const s = await fetchAgentLogs(agentId);
+        if (s !== 'running' && s !== 'spawning') {
+          if (agentLogsPollRef.current) { clearInterval(agentLogsPollRef.current); agentLogsPollRef.current = null; }
+        }
+      }, 3000);
+    }
+  }, [fetchAgentLogs]);
+
+  const closeAgentTerminal = useCallback(() => {
+    setViewingAgentId(null);
+    setAgentLogs([]);
+    if (agentLogsPollRef.current) { clearInterval(agentLogsPollRef.current); agentLogsPollRef.current = null; }
+  }, []);
 
   // Workspace chat — sends to orchestrator with repo context baked in
   const sendChat = async () => {
@@ -813,12 +926,26 @@ export default function WorkspacePage() {
       {/* Main: sidebar + content */}
       <div className="flex-1 flex overflow-hidden">
         {/* File tree sidebar */}
-        <div className="w-[220px] flex-shrink-0 border-r border-zinc-800 overflow-y-auto bg-zinc-950/30">
+        {!showFileTree && (
+          <button
+            onClick={() => setShowFileTree(true)}
+            className="flex-shrink-0 w-8 border-r border-zinc-800 flex items-center justify-center hover:bg-zinc-900 transition-colors"
+            title="Show file tree"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-zinc-600" />
+          </button>
+        )}
+        <div className={`w-[220px] flex-shrink-0 border-r border-zinc-800 overflow-y-auto bg-zinc-950/30 ${showFileTree ? 'flex flex-col' : 'hidden'}`}>
           <div className="flex items-center justify-between px-3 py-2">
             <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">files</span>
-            <button onClick={() => fetchDir('')} className="text-zinc-700 hover:text-zinc-400">
-              <RefreshCw className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => fetchDir('')} className="text-zinc-700 hover:text-zinc-400">
+                <RefreshCw className="w-3 h-3" />
+              </button>
+              <button onClick={() => setShowFileTree(false)} className="text-zinc-700 hover:text-zinc-400 md:hidden" title="Collapse file tree">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           </div>
           <div className="px-2 pb-1.5">
             <input
@@ -859,9 +986,62 @@ export default function WorkspacePage() {
         </div>
 
         {/* Content area */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto flex flex-col min-w-0">
+          {/* Agent terminal view — replaces code viewer when an agent is selected */}
+          {viewingAgentId && (
+            <div className="flex-1 flex flex-col h-full bg-black overflow-hidden">
+              {/* Terminal header */}
+              <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-zinc-800 bg-zinc-900/60">
+                <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="font-mono text-[10px] text-zinc-400">
+                  {agents.find(a => a.id === viewingAgentId)?.name ?? viewingAgentId}
+                </span>
+                {(() => {
+                  const a = agents.find(ag => ag.id === viewingAgentId);
+                  return a ? (
+                    <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
+                      a.status === 'running' ? 'text-emerald-400 bg-emerald-500/10'
+                        : a.status === 'done' ? 'text-zinc-500 bg-zinc-800'
+                        : a.status === 'error' || a.status === 'killed' ? 'text-red-400 bg-red-500/10'
+                        : 'text-blue-400 bg-blue-500/10'
+                    }`}>{a.status}</span>
+                  ) : null;
+                })()}
+                {(() => {
+                  const a = agents.find(ag => ag.id === viewingAgentId);
+                  return a && (a.status === 'running' || a.status === 'spawning') ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                  ) : null;
+                })()}
+                <button
+                  onClick={closeAgentTerminal}
+                  className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-mono text-zinc-500 hover:text-zinc-200 border border-zinc-700/40 hover:border-zinc-600 transition-colors"
+                >
+                  <X className="w-2.5 h-2.5" /> close
+                </button>
+              </div>
+              {/* Log output */}
+              <div className="flex-1 overflow-y-auto p-3 font-mono text-[11px] leading-5">
+                {agentLogs.length === 0 ? (
+                  <div className="text-zinc-600 py-4 text-center">no logs yet...</div>
+                ) : (
+                  agentLogs.map((log, i) => (
+                    <div key={i} className={`whitespace-pre-wrap break-all ${
+                      log.stream === 'stderr' ? 'text-red-400'
+                        : log.stream === 'system' ? 'text-zinc-500'
+                        : 'text-green-400'
+                    }`}>
+                      {log.content}
+                    </div>
+                  ))
+                )}
+                <div ref={agentLogsEndRef} />
+              </div>
+            </div>
+          )}
+
           {/* Code view */}
-          {activeTab === 'code' && (
+          {!viewingAgentId && activeTab === 'code' && (
             <div className="h-full flex flex-col">
               {/* Tab bar */}
               {openFiles.length > 0 && (
@@ -972,7 +1152,7 @@ export default function WorkspacePage() {
                       {(editedContent ?? activeFile.content).split('\n').map((line, i) => (
                         <div key={i} className="flex hover:bg-zinc-900/30">
                           <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>
-                          <span className="whitespace-pre">{line}</span>
+                          <span className="whitespace-pre">{highlightLine(line, activeFile.ext)}</span>
                         </div>
                       ))}
                     </pre>
@@ -990,7 +1170,7 @@ export default function WorkspacePage() {
           )}
 
           {/* Diff view */}
-          {activeTab === 'diff' && (
+          {!viewingAgentId && activeTab === 'diff' && (
             <div className="p-4">
               {diffData?.commits && diffData.commits.length > 0 && (
                 <div className="mb-4">
@@ -1026,7 +1206,7 @@ export default function WorkspacePage() {
           )}
 
           {/* PR review view */}
-          {activeTab === 'prs' && (
+          {!viewingAgentId && activeTab === 'prs' && (
             selectedPR ? (
               <div className="h-full flex flex-col">
                 <div className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/30">
@@ -1100,7 +1280,7 @@ export default function WorkspacePage() {
 
         {/* Right panel: agent cards */}
         {showAgents && (
-          <div className="w-[260px] flex-shrink-0 border-l border-zinc-800 overflow-y-auto bg-zinc-950/30">
+          <div className="hidden md:flex w-[260px] flex-shrink-0 border-l border-zinc-800 overflow-y-auto bg-zinc-950/30 flex-col">
             <div className="flex items-center justify-between px-3 py-2">
               <div className="flex items-center gap-1.5">
                 <Bot className="w-3 h-3 text-zinc-600" />
@@ -1127,22 +1307,26 @@ export default function WorkspacePage() {
                       {repoAgents.map(a => (
                         <div key={a.id} className="px-2 py-2 rounded-lg hover:bg-zinc-900 transition-colors mb-0.5">
                           <div className="flex items-center gap-2">
-                            <a href={`/agents/${a.id}`} className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                a.status === 'running' ? 'bg-emerald-400 animate-pulse'
-                                  : a.status === 'done' ? 'bg-emerald-400'
-                                  : a.status === 'error' || a.status === 'killed' ? 'bg-red-400'
-                                  : a.status === 'spawning' ? 'bg-blue-400 animate-pulse'
-                                  : 'bg-zinc-600'
-                              }`} />
-                              <span className="font-mono text-[10px] text-zinc-300 truncate">{a.name}</span>
-                              <span className={`text-[8px] font-mono ml-auto ${
-                                a.status === 'running' ? 'text-emerald-400'
-                                  : a.status === 'done' ? 'text-zinc-600'
-                                  : a.status === 'error' ? 'text-red-400'
-                                  : 'text-zinc-600'
-                              }`}>{a.status}</span>
-                            </a>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                              a.status === 'running' ? 'bg-emerald-400 animate-pulse'
+                                : a.status === 'done' ? 'bg-emerald-400'
+                                : a.status === 'error' || a.status === 'killed' ? 'bg-red-400'
+                                : a.status === 'spawning' ? 'bg-blue-400 animate-pulse'
+                                : 'bg-zinc-600'
+                            }`} />
+                            <button
+                              onClick={() => openAgentTerminal(a.id)}
+                              className="font-mono text-[10px] text-zinc-300 truncate hover:text-emerald-400 transition-colors text-left flex-1 min-w-0"
+                              title="View agent logs"
+                            >
+                              {a.name}
+                            </button>
+                            <span className={`text-[8px] font-mono flex-shrink-0 ${
+                              a.status === 'running' ? 'text-emerald-400'
+                                : a.status === 'done' ? 'text-zinc-600'
+                                : a.status === 'error' ? 'text-red-400'
+                                : 'text-zinc-600'
+                            }`}>{a.status}</span>
                             {a.status === 'running' && (
                               <button
                                 onClick={async (e) => { e.preventDefault(); await fetch(`/api/agents/${a.id}`, { method: 'DELETE' }); fetchAgents(); }}
@@ -1202,7 +1386,7 @@ export default function WorkspacePage() {
         {!showAgents && (
           <button
             onClick={() => setShowAgents(true)}
-            className="flex-shrink-0 w-8 border-l border-zinc-800 flex items-center justify-center hover:bg-zinc-900 transition-colors"
+            className="hidden md:flex flex-shrink-0 w-8 border-l border-zinc-800 items-center justify-center hover:bg-zinc-900 transition-colors"
             title="Show agents panel"
           >
             <Bot className="w-3.5 h-3.5 text-zinc-600" />
