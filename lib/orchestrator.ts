@@ -103,7 +103,7 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
     // Escape for single-quote shell embedding
     const escapedPrompt = prompt.replace(/'/g, `'\\''`);
     // Use stream-json to get real-time events (thinking, text chunks) as they happen
-    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --output-format stream-json '${escapedPrompt}'`;
+    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --verbose --output-format stream-json '${escapedPrompt}'`;
 
     // Use PTY so the orchestrator terminal can render live output
     const ptyProc = pty.spawn('/bin/sh', ['-c', cmd], {
@@ -133,21 +133,30 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
         try {
           const event = JSON.parse(trimmed);
 
-          // Content block delta — streaming text
+          // system init event — CLI is starting up
+          if (event.type === 'system' && event.subtype === 'init') {
+            if (onChunk) onChunk('[starting up]');
+          }
+
+          // assistant message — contains the full response text
+          if (event.type === 'assistant' && event.message?.content) {
+            for (const block of event.message.content) {
+              if (block.type === 'text' && block.text) {
+                fullText += block.text;
+                if (onChunk) onChunk(block.text);
+              }
+            }
+          }
+
+          // Content block delta — streaming text (if available)
           if (event.type === 'content_block_delta' && event.delta?.text) {
             fullText += event.delta.text;
             if (onChunk) onChunk(event.delta.text);
           }
 
-          // Content block start with text
-          if (event.type === 'content_block_start' && event.content_block?.text) {
-            fullText += event.content_block.text;
-            if (onChunk) onChunk(event.content_block.text);
-          }
-
-          // Message with result (final)
-          if (event.type === 'result' || event.result) {
-            const text = event.result ?? event.content ?? '';
+          // result event — final
+          if (event.type === 'result') {
+            const text = event.result ?? '';
             if (text && !fullText) fullText = text;
           }
 
