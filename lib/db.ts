@@ -220,7 +220,18 @@ function initSchema(db: Database.Database): void {
 // Agent queries
 export function getAllAgents(): Agent[] {
   const db = getDb();
-  return db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all() as Agent[];
+  return db.prepare(`
+    SELECT a.*, l.content AS last_log
+    FROM agents a
+    LEFT JOIN (
+      SELECT agent_id, content
+      FROM logs
+      WHERE (agent_id, id) IN (
+        SELECT agent_id, MAX(id) FROM logs GROUP BY agent_id
+      )
+    ) l ON l.agent_id = a.id
+    ORDER BY a.created_at DESC
+  `).all() as Agent[];
 }
 
 export function getAgentById(id: string): Agent | undefined {

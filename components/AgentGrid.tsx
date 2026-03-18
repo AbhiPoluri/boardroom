@@ -35,6 +35,14 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 const STATUS_COLORS: Record<string, string> = {
   spawning: 'text-amber-400 bg-amber-400',
   running:  'text-emerald-400 bg-emerald-400',
@@ -261,9 +269,15 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
           {/* Log snippet */}
           <div className="flex-1 bg-black/50 rounded-lg p-2 font-mono text-[10px] text-zinc-600 overflow-hidden">
             {logs.length === 0 ? (
-              <span className="italic text-zinc-700">
-                {isActive ? 'waiting for output…' : 'no logs'}
-              </span>
+              isActive ? (
+                <span className="italic text-zinc-700">waiting for output…</span>
+              ) : agent.last_log ? (
+                <span className="truncate text-zinc-500 leading-relaxed block">
+                  {stripAnsi(agent.last_log)}
+                </span>
+              ) : (
+                <span className="italic text-zinc-700">no logs</span>
+              )
             ) : (
               logs.slice(-8).map((log, i) => (
                 <div key={log.id} className={`truncate leading-relaxed ${i === logs.slice(-8).length - 1 ? 'text-zinc-400' : ''}`}>
@@ -288,7 +302,7 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
           {/* Footer */}
           <div className="flex items-center justify-between mt-1.5 flex-shrink-0">
             <span className="text-[10px] font-mono text-zinc-700">
-              {new Date(agent.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {relativeTime(agent.created_at)}
             </span>
             <div className="flex items-center gap-2">
               {agent.repo && <GitBadge agentId={agent.id} />}

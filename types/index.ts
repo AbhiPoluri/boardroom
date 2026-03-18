@@ -16,6 +16,7 @@ export interface Agent {
   depends_on?: string | null;
   created_at: number;
   updated_at: number;
+  last_log?: string | null;
 }
 
 export interface Log {

@@ -29,7 +29,7 @@ interface SpawnModalProps {
   onClose: () => void;
   onSpawn: (data: { task: string; type: AgentType; repo?: string; useGitIsolation?: boolean; name?: string; model?: string; depends_on?: string[] }) => Promise<void>;
   onImport: (data: { path: string; name?: string; task?: string; type?: AgentType; model?: string }) => Promise<void>;
-  existingAgents?: Array<{ id: string; name: string }>;
+  existingAgents?: Array<{ id: string; name: string; status: string; created_at: number }>;
 }
 
 type ModalTab = 'spawn' | 'configs' | 'import';
@@ -388,7 +388,20 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               <div className="space-y-1.5">
                 <Label className="font-mono text-xs text-zinc-400">Depends On <span className="text-zinc-700">(optional)</span></Label>
                 <div className="flex flex-wrap gap-1.5">
-                  {existingAgents.map(a => (
+                  {existingAgents
+                    .filter(a => {
+                      const isRunning = a.status === 'running' || a.status === 'spawning';
+                      const isDoneRecent = a.status === 'done' && (Date.now() - a.created_at) < 24 * 60 * 60 * 1000;
+                      return isRunning || isDoneRecent;
+                    })
+                    .sort((a, b) => {
+                      const aRunning = a.status === 'running' || a.status === 'spawning';
+                      const bRunning = b.status === 'running' || b.status === 'spawning';
+                      if (aRunning && !bRunning) return -1;
+                      if (!aRunning && bRunning) return 1;
+                      return b.created_at - a.created_at;
+                    })
+                    .map(a => (
                     <button
                       key={a.id}
                       type="button"

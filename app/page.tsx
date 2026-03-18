@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AgentGrid } from '@/components/AgentGrid';
 import { SpawnModal } from '@/components/SpawnModal';
 import { Button } from '@/components/ui/button';
@@ -175,6 +175,20 @@ export default function Dashboard() {
   };
 
   const hasActive = stats.active > 0;
+
+  // Uptime tracking
+  const pageLoadTime = useRef(Date.now());
+  const [uptime, setUptime] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setUptime(Math.floor((Date.now() - pageLoadTime.current) / 1000)), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  function formatUptime(s: number): string {
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  }
 
   // Filtered + sorted agents
   const filteredAgents = agents
@@ -500,7 +514,24 @@ export default function Dashboard() {
           )}
         </div>
 
-      <SpawnModal open={spawnOpen} onClose={() => setSpawnOpen(false)} onSpawn={handleSpawn} onImport={handleImport} existingAgents={agents.map(a => ({ id: a.id, name: a.name }))} />
+      {/* Status bar */}
+      <div className="flex-shrink-0 h-6 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between px-3 text-[9px] font-mono text-zinc-600">
+        <span>
+          <span className={stats.active > 0 ? 'text-emerald-400' : ''}>{stats.active} active</span>
+          <span className="mx-1.5 text-zinc-800">·</span>
+          <span className={stats.pending_tasks > 0 ? 'text-amber-400' : ''}>{stats.pending_tasks} pending</span>
+        </span>
+        <span className={tokens.cost_usd > 0 ? 'text-green-400' : 'text-zinc-700'}>
+          ${tokens.cost_usd.toFixed(4)}
+        </span>
+        <span>
+          <span className={tokens.total_tokens > 0 ? 'text-blue-400' : 'text-zinc-700'}>{formatTokens(tokens.total_tokens)} tok</span>
+          <span className="mx-1.5 text-zinc-800">·</span>
+          <span>up {formatUptime(uptime)}</span>
+        </span>
+      </div>
+
+      <SpawnModal open={spawnOpen} onClose={() => setSpawnOpen(false)} onSpawn={handleSpawn} onImport={handleImport} existingAgents={agents.map(a => ({ id: a.id, name: a.name, status: a.status, created_at: a.created_at }))} />
     </div>
   );
 }

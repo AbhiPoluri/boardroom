@@ -117,6 +117,7 @@ export default function WorkspacePage() {
 
   const [activeFile, setActiveFile] = useState<{ path: string; content: string; ext: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'code' | 'diff' | 'prs'>('code');
+  const codeViewerRef = useRef<HTMLPreElement>(null);
 
   const [diffData, setDiffData] = useState<{ diff: string; stat?: string; commits?: string[]; branch?: string; base?: string; status?: string[]; staged?: string } | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
@@ -254,6 +255,7 @@ export default function WorkspacePage() {
     if (data.content !== undefined) {
       setActiveFile({ path: filePath, content: data.content, ext: data.extension });
       setActiveTab('code');
+      setTimeout(() => codeViewerRef.current?.scrollTo(0, 0), 0);
     }
   };
 
@@ -764,11 +766,32 @@ export default function WorkspacePage() {
             activeFile ? (
               <div className="h-full flex flex-col">
                 <div className="flex items-center gap-2 px-4 py-1.5 border-b border-zinc-800 bg-zinc-900/30">
-                  <FileCode className="w-3.5 h-3.5 text-zinc-500" />
-                  <span className="font-mono text-[11px] text-zinc-300">{activeFile.path}</span>
-                  <Badge variant="outline" className="text-[8px] font-mono ml-auto">{langFromExt(activeFile.ext)}</Badge>
+                  <FileCode className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                  {/* Breadcrumb path segments */}
+                  <div className="flex items-center gap-0.5 font-mono text-[11px] overflow-hidden">
+                    {activeFile.path.split('/').map((segment, idx, arr) => {
+                      const isLast = idx === arr.length - 1;
+                      const dirPath = arr.slice(0, idx + 1).join('/');
+                      return (
+                        <span key={idx} className="flex items-center gap-0.5 flex-shrink-0">
+                          {!isLast ? (
+                            <button
+                              onClick={() => toggleDir(dirPath)}
+                              className="text-zinc-500 hover:text-zinc-200 transition-colors px-0.5 py-0 rounded hover:bg-zinc-800"
+                            >
+                              {segment}
+                            </button>
+                          ) : (
+                            <span className="text-zinc-200">{segment}</span>
+                          )}
+                          {!isLast && <ChevronRight className="w-3 h-3 text-zinc-700 flex-shrink-0" />}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <Badge variant="outline" className="text-[8px] font-mono ml-auto flex-shrink-0">{langFromExt(activeFile.ext)}</Badge>
                 </div>
-                <pre className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
+                <pre ref={codeViewerRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
                   {activeFile.content.split('\n').map((line, i) => (
                     <div key={i} className="flex hover:bg-zinc-900/30">
                       <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>

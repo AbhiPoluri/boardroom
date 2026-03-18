@@ -3,12 +3,23 @@ import { getCronJobs, getCronJob, createCronJob, updateCronJob, deleteCronJob, r
 import { spawnAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentType } from '@/types';
+import { CronExpressionParser } from 'cron-parser';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const jobs = getCronJobs();
-  return NextResponse.json({ jobs });
+  const jobsWithNextRun = jobs.map((job) => {
+    if (!job.enabled) return job;
+    try {
+      const interval = CronExpressionParser.parse(job.schedule);
+      const next_run = interval.next().toDate().getTime();
+      return { ...job, next_run };
+    } catch {
+      return job;
+    }
+  });
+  return NextResponse.json({ jobs: jobsWithNextRun });
 }
 
 export async function POST(req: NextRequest) {

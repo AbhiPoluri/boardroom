@@ -657,6 +657,9 @@ export default function SkillsPage() {
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xs text-zinc-300">{detail.name}/</span>
                   <span className="font-mono text-[10px] text-zinc-600">SKILL.md</span>
+                  <span className="font-mono text-[10px] text-zinc-700">
+                    {detail.files.length} {detail.files.length === 1 ? 'file' : 'files'} · {(detail.files.reduce((sum, f) => sum + (f.size || 0), 0) / 1024).toFixed(1)}k total
+                  </span>
                   {currentDraftId && (
                     <Badge className="text-[9px] font-mono bg-amber-500/15 text-amber-400 border-amber-500/25">
                       draft
