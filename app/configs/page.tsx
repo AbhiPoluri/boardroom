@@ -424,6 +424,7 @@ export default function ConfigsPage() {
   };
 
   const handleDelete = async (slug: string) => {
+    if (!confirm('Delete this agent config? This cannot be undone.')) return;
     try {
       await fetch('/api/agent-configs', {
         method: 'DELETE',

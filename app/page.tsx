@@ -372,17 +372,33 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="text-[10px] font-mono text-zinc-700">presets:</span>
               {Object.entries(filterPresets).map(([name, preset]) => (
-                <button
+                <span
                   key={name}
-                  onClick={() => {
-                    setFilter(preset.filter as any);
-                    setSortBy(preset.sortBy as any);
-                    setSearchQuery(preset.searchQuery);
-                  }}
-                  className="px-2 py-1 rounded-full text-xs font-mono bg-purple-900/60 border border-purple-800 text-purple-300 hover:border-purple-700 transition-colors"
+                  className="flex items-center gap-1 rounded-full bg-purple-900/60 border border-purple-800 text-purple-300 hover:border-purple-700 transition-colors"
                 >
-                  {name}
-                </button>
+                  <button
+                    onClick={() => {
+                      setFilter(preset.filter as any);
+                      setSortBy(preset.sortBy as any);
+                      setSearchQuery(preset.searchQuery);
+                    }}
+                    className="px-2 py-1 text-xs font-mono"
+                  >
+                    {name}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const updated = { ...filterPresets };
+                      delete updated[name];
+                      setFilterPresets(updated);
+                      localStorage.setItem('boardroom:filterPresets', JSON.stringify(updated));
+                    }}
+                    className="pr-1.5 text-purple-500 hover:text-purple-200 transition-colors text-xs leading-none"
+                    title={`Delete preset "${name}"`}
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
             </div>
           )}

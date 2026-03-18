@@ -351,6 +351,7 @@ export default function BranchesPage() {
                     <Button
                       onClick={handleMerge}
                       disabled={merging || !selectedBranch.repo}
+                      title={!selectedBranch.repo ? 'No repo attached to this branch' : undefined}
                       size="sm"
                       className="font-mono text-[10px] h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white"
                     >

@@ -388,6 +388,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
   }, [steps, handleChange]);
 
   const removeNode = useCallback((idx: number) => {
+    if (!confirm('Delete this step?')) return;
     const removedName = steps[idx].name;
     const next = steps.filter((_, i) => i !== idx).map(s => ({
       ...s,

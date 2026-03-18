@@ -469,7 +469,7 @@ export default function LogsPage() {
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 border-t border-zinc-800/60 bg-zinc-950/50">
         <span className="text-[10px] font-mono text-zinc-700">
           {viewMode === 'live'
-            ? autoRefresh ? 'refreshing every 3s' : 'refresh paused'
+            ? autoRefresh ? 'refreshing every 5s' : 'refresh paused'
             : searched ? `${searchResults.length} results` : 'ready to search'
           }
         </span>

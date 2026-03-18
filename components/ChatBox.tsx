@@ -212,6 +212,7 @@ export function ChatBox({}: ChatBoxProps) {
   const [pushRequests, setPushRequests] = useState<PushRequest[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Load history from DB on mount
   useEffect(() => {
@@ -289,6 +290,13 @@ export function ChatBox({}: ChatBoxProps) {
     setMessages([INITIAL_MESSAGE]);
   }, []);
 
+  const cancelMessage = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || loading) return;
@@ -303,11 +311,15 @@ export function ChatBox({}: ChatBoxProps) {
     const assistantMsg: ChatMessage = { role: 'assistant', content: '', events: [] };
     setMessages(prev => [...prev, assistantMsg]);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -364,16 +376,21 @@ export function ChatBox({}: ChatBoxProps) {
         }
       }
     } catch (err) {
-      setMessages(prev => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: 'assistant',
-          content: '',
-          events: [{ type: 'error', error: err instanceof Error ? err.message : 'Network error' }],
-        };
-        return updated;
-      });
+      if (err instanceof Error && err.name === 'AbortError') {
+        // User cancelled — leave the partial response, just mark done
+      } else {
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: 'assistant',
+            content: '',
+            events: [{ type: 'error', error: err instanceof Error ? err.message : 'Network error' }],
+          };
+          return updated;
+        });
+      }
     } finally {
+      abortControllerRef.current = null;
       setLoading(false);
       inputRef.current?.focus();
     }
@@ -391,10 +408,19 @@ export function ChatBox({}: ChatBoxProps) {
       {/* Status bar */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-zinc-800/50 bg-zinc-900/30">
         {loading ? (
-          <span className="flex items-center gap-1.5 text-xs font-mono text-zinc-600">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-            working
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-mono text-zinc-600">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              working
+            </span>
+            <button
+              onClick={cancelMessage}
+              className="flex items-center gap-1 text-[10px] font-mono text-zinc-600 hover:text-red-400 transition-colors"
+              title="Abort request"
+            >
+              <X className="w-3 h-3" /> abort
+            </button>
+          </div>
         ) : (
           <button
             onClick={clearHistory}

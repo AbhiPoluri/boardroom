@@ -545,6 +545,9 @@ export default function SkillsPage() {
                         <span className="text-[9px] font-mono text-zinc-700">
                           {new Date(d.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
+                        <span className="text-[9px] font-mono text-zinc-600 ml-auto">
+                          expires {Math.max(0, Math.ceil((d.savedAt + 7 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000)))}d
+                        </span>
                       </div>
                     </button>
                     <button

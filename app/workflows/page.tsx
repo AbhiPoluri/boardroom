@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Trash2, Play, Save, Workflow, Clock,
-  Zap, Activity, CheckCircle2, XCircle, Eye,
+  Zap, Activity, CheckCircle2, XCircle, Eye, Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -381,6 +381,21 @@ export default function WorkflowsPage() {
     setIsNew(false);
   };
 
+  const handleDuplicate = () => {
+    const newDraftId = genDraftId();
+    setCurrentDraftId(newDraftId);
+    setActiveDraftId(newDraftId);
+    setSelected(null);
+    setViewingRun(null);
+    setViewedRunData(null);
+    setEdName(`${edName}-copy`);
+    // edDesc, edSteps, edSchedule, edCronEnabled already loaded from selected workflow
+    setIsNew(true);
+    setError('');
+    setSuccess('');
+    isDirty.current = true;
+  };
+
   const [runId, setRunId] = useState<string | null>(null);
   const [runAgents, setRunAgents] = useState<Array<{ stepName: string; agentId: string; status: string }>>([]);
   const [runStatus, setRunStatus] = useState<string | null>(null);
@@ -493,9 +508,14 @@ export default function WorkflowsPage() {
           {hasEditor && (
             <>
               {!isNew && selected && (
-                <Button onClick={handleDelete} variant="ghost" size="sm" className="h-7 w-7 p-0 text-zinc-600 hover:text-red-400">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
+                <>
+                  <Button onClick={handleDuplicate} variant="ghost" size="sm" className="h-7 w-7 p-0 text-zinc-600 hover:text-zinc-300" title="Duplicate workflow">
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button onClick={handleDelete} variant="ghost" size="sm" className="h-7 w-7 p-0 text-zinc-600 hover:text-red-400">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </>
               )}
               <Button onClick={handleRun} disabled={edSteps.length === 0 || !edSteps.some(s => s.task.trim()) || running} variant="outline" size="sm" className="font-mono text-xs h-7 px-3">
                 <Play className="w-3 h-3 mr-1.5" /> {running ? 'running...' : 'run'}
