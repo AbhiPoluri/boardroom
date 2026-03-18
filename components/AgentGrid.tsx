@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, X, Trash2, Terminal, LayoutGrid, ExternalLink, RotateCcw } from 'lucide-react';
+import { Plus, X, Trash2, Terminal, LayoutGrid, ExternalLink, RotateCcw, SquareCode } from 'lucide-react';
 import { GitBadge } from '@/components/GitPanel';
 import type { Agent } from '@/types';
 
@@ -315,6 +315,19 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
                 <span className="text-[10px] font-mono text-blue-400/70" title={`in: ${tokens.input_tokens.toLocaleString()} / out: ${tokens.output_tokens.toLocaleString()}`}>
                   {formatTokens(tokens.input_tokens + tokens.output_tokens)} tok
                 </span>
+              )}
+              {agent.repo && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    localStorage.setItem('boardroom:workspace-repo', agent.repo!);
+                    window.location.href = '/workspace';
+                  }}
+                  className="text-[8px] font-mono text-zinc-600 hover:text-blue-400 transition-colors flex items-center gap-0.5"
+                  title={`Open ${agent.repo} in workspace`}
+                >
+                  <SquareCode className="w-3 h-3" />
+                </button>
               )}
               <ExternalLink className="w-3 h-3 text-zinc-700 group-hover:text-zinc-500 transition-colors" />
             </div>

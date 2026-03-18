@@ -5,6 +5,7 @@ import {
   FolderOpen, File, ChevronRight, ChevronDown, GitBranch,
   Play, Check, X, MessageSquare, RefreshCw, Home,
   FileCode, Diff, GitPullRequest, Bot, Send, GripHorizontal,
+  Pencil, Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -115,9 +116,16 @@ export default function WorkspacePage() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [showAgents, setShowAgents] = useState(true);
 
-  const [activeFile, setActiveFile] = useState<{ path: string; content: string; ext: string } | null>(null);
+  const [openFiles, setOpenFiles] = useState<Array<{ path: string; content: string; ext: string }>>([]);
+  const [activeFileIdx, setActiveFileIdx] = useState<number>(0);
+  const [editedContent, setEditedContent] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'diff' | 'prs'>('code');
   const codeViewerRef = useRef<HTMLPreElement>(null);
+
+  // Derived: active file from openFiles + activeFileIdx
+  const activeFile = openFiles[activeFileIdx] ?? null;
 
   const [diffData, setDiffData] = useState<{ diff: string; stat?: string; commits?: string[]; branch?: string; base?: string; status?: string[]; staged?: string } | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
@@ -237,7 +245,10 @@ export default function WorkspacePage() {
   const openRepo = (r: string) => {
     setRepo(r);
     setCurrentPath('');
-    setActiveFile(null);
+    setOpenFiles([]);
+    setActiveFileIdx(0);
+    setEditedContent(null);
+    setIsEditing(false);
     setExpandedDirs(new Set());
     setDirContents({});
     saveRecentRepo(r);
@@ -248,15 +259,69 @@ export default function WorkspacePage() {
     if (repo) fetchDir('');
   }, [repo, fetchDir]);
 
-  // Fetch file content
+  // Fetch file content — adds a new tab or switches to existing
   const openFile = async (filePath: string) => {
+    // If already open, just switch to it
+    const existingIdx = openFiles.findIndex(f => f.path === filePath);
+    if (existingIdx !== -1) {
+      setActiveFileIdx(existingIdx);
+      setEditedContent(null);
+      setIsEditing(false);
+      setActiveTab('code');
+      return;
+    }
     const res = await fetch(`/api/files?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(filePath)}&action=read`);
     const data = await res.json();
     if (data.content !== undefined) {
-      setActiveFile({ path: filePath, content: data.content, ext: data.extension });
+      setOpenFiles(prev => {
+        const next = [...prev, { path: filePath, content: data.content, ext: data.extension }];
+        setActiveFileIdx(next.length - 1);
+        return next;
+      });
+      setEditedContent(null);
+      setIsEditing(false);
       setActiveTab('code');
       setTimeout(() => codeViewerRef.current?.scrollTo(0, 0), 0);
     }
+  };
+
+  // Close a tab
+  const closeTab = (idx: number) => {
+    setOpenFiles(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      setActiveFileIdx(i => {
+        if (next.length === 0) return 0;
+        if (i >= next.length) return next.length - 1;
+        if (i > idx) return i - 1;
+        return i;
+      });
+      return next;
+    });
+    setEditedContent(null);
+    setIsEditing(false);
+  };
+
+  // Save file via PUT
+  const saveFile = async () => {
+    if (!activeFile || editedContent === null) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/files', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, path: activeFile.path, content: editedContent }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Update tab content
+        setOpenFiles(prev => prev.map((f, i) =>
+          i === activeFileIdx ? { ...f, content: editedContent } : f
+        ));
+        setEditedContent(null);
+        setIsEditing(false);
+      }
+    } catch {}
+    setSaving(false);
   };
 
   // Toggle directory
@@ -465,7 +530,7 @@ export default function WorkspacePage() {
           <button
             onClick={() => entry.type === 'directory' ? toggleDir(entry.path) : openFile(entry.path)}
             className={`w-full text-left flex items-center gap-1.5 px-2 py-1 text-[11px] font-mono hover:bg-zinc-800/60 transition-colors ${
-              activeFile?.path === entry.path && activeTab === 'code' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'
+              openFiles[activeFileIdx]?.path === entry.path && activeTab === 'code' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'
             }`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
           >
@@ -653,7 +718,7 @@ export default function WorkspacePage() {
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
-        <button onClick={() => { setRepo(''); setActiveFile(null); localStorage.removeItem('boardroom:workspace-repo'); }} className="text-zinc-600 hover:text-zinc-400">
+        <button onClick={() => { setRepo(''); setOpenFiles([]); setActiveFileIdx(0); setEditedContent(null); setIsEditing(false); localStorage.removeItem('boardroom:workspace-repo'); }} className="text-zinc-600 hover:text-zinc-400">
           <Home className="w-3.5 h-3.5" />
         </button>
         <h1 className="font-mono text-sm text-zinc-100">workspace</h1>
@@ -763,51 +828,126 @@ export default function WorkspacePage() {
         <div className="flex-1 overflow-auto">
           {/* Code view */}
           {activeTab === 'code' && (
-            activeFile ? (
-              <div className="h-full flex flex-col">
-                <div className="flex items-center gap-2 px-4 py-1.5 border-b border-zinc-800 bg-zinc-900/30">
-                  <FileCode className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                  {/* Breadcrumb path segments */}
-                  <div className="flex items-center gap-0.5 font-mono text-[11px] overflow-hidden">
-                    {activeFile.path.split('/').map((segment, idx, arr) => {
-                      const isLast = idx === arr.length - 1;
-                      const dirPath = arr.slice(0, idx + 1).join('/');
-                      return (
-                        <span key={idx} className="flex items-center gap-0.5 flex-shrink-0">
-                          {!isLast ? (
-                            <button
-                              onClick={() => toggleDir(dirPath)}
-                              className="text-zinc-500 hover:text-zinc-200 transition-colors px-0.5 py-0 rounded hover:bg-zinc-800"
-                            >
-                              {segment}
-                            </button>
-                          ) : (
-                            <span className="text-zinc-200">{segment}</span>
-                          )}
-                          {!isLast && <ChevronRight className="w-3 h-3 text-zinc-700 flex-shrink-0" />}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <Badge variant="outline" className="text-[8px] font-mono ml-auto flex-shrink-0">{langFromExt(activeFile.ext)}</Badge>
+            <div className="h-full flex flex-col">
+              {/* Tab bar */}
+              {openFiles.length > 0 && (
+                <div className="flex-shrink-0 flex items-center gap-0 border-b border-zinc-800 bg-zinc-950/60 overflow-x-auto">
+                  {openFiles.map((f, idx) => {
+                    const name = f.path.split('/').pop() || f.path;
+                    const isActive = idx === activeFileIdx;
+                    const isDirty = isActive && editedContent !== null && editedContent !== f.content;
+                    return (
+                      <div
+                        key={f.path}
+                        className={`flex items-center gap-1 px-2 py-1 border-r border-zinc-800 cursor-pointer flex-shrink-0 max-w-[140px] group transition-colors ${
+                          isActive ? 'bg-zinc-900 text-zinc-200' : 'text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
+                        }`}
+                        onClick={() => { setActiveFileIdx(idx); setEditedContent(null); setIsEditing(false); }}
+                      >
+                        <span className="text-[10px] font-mono truncate" title={f.path}>{name}</span>
+                        {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="unsaved" />}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); closeTab(idx); }}
+                          className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-300 transition-opacity ml-0.5"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <pre ref={codeViewerRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
-                  {activeFile.content.split('\n').map((line, i) => (
-                    <div key={i} className="flex hover:bg-zinc-900/30">
-                      <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>
-                      <span className="whitespace-pre">{line}</span>
+              )}
+
+              {activeFile ? (
+                <>
+                  {/* File header */}
+                  <div className="flex items-center gap-2 px-4 py-1.5 border-b border-zinc-800 bg-zinc-900/30 flex-shrink-0">
+                    <FileCode className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                    {/* Breadcrumb path segments */}
+                    <div className="flex items-center gap-0.5 font-mono text-[11px] overflow-hidden">
+                      {activeFile.path.split('/').map((segment, idx, arr) => {
+                        const isLast = idx === arr.length - 1;
+                        const dirPath = arr.slice(0, idx + 1).join('/');
+                        return (
+                          <span key={idx} className="flex items-center gap-0.5 flex-shrink-0">
+                            {!isLast ? (
+                              <button
+                                onClick={() => toggleDir(dirPath)}
+                                className="text-zinc-500 hover:text-zinc-200 transition-colors px-0.5 py-0 rounded hover:bg-zinc-800"
+                              >
+                                {segment}
+                              </button>
+                            ) : (
+                              <span className="text-zinc-200">{segment}</span>
+                            )}
+                            {!isLast && <ChevronRight className="w-3 h-3 text-zinc-700 flex-shrink-0" />}
+                          </span>
+                        );
+                      })}
                     </div>
-                  ))}
-                </pre>
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center h-full">
-                <div className="text-center">
-                  <File className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
-                  <p className="font-mono text-xs text-zinc-600">select a file from the tree</p>
+                    <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                      {editedContent !== null && editedContent !== activeFile.content && (
+                        <span className="text-[9px] font-mono text-amber-400">unsaved</span>
+                      )}
+                      {isEditing && editedContent !== null && editedContent !== activeFile.content && (
+                        <button
+                          onClick={saveFile}
+                          disabled={saving}
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
+                        >
+                          <Save className="w-2.5 h-2.5" />
+                          {saving ? 'saving...' : 'save'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (isEditing) {
+                            setIsEditing(false);
+                            setEditedContent(null);
+                          } else {
+                            setIsEditing(true);
+                            setEditedContent(activeFile.content);
+                          }
+                        }}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono transition-colors ${
+                          isEditing ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300 border border-zinc-700/50'
+                        }`}
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                        {isEditing ? 'cancel' : 'edit'}
+                      </button>
+                      <Badge variant="outline" className="text-[8px] font-mono">{langFromExt(activeFile.ext)}</Badge>
+                    </div>
+                  </div>
+
+                  {/* Content: textarea when editing, pre when read-only */}
+                  {isEditing ? (
+                    <textarea
+                      value={editedContent ?? activeFile.content}
+                      onChange={(e) => setEditedContent(e.target.value)}
+                      className="flex-1 w-full p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950 resize-none focus:outline-none border-0"
+                      spellCheck={false}
+                    />
+                  ) : (
+                    <pre ref={codeViewerRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
+                      {(editedContent ?? activeFile.content).split('\n').map((line, i) => (
+                        <div key={i} className="flex hover:bg-zinc-900/30">
+                          <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>
+                          <span className="whitespace-pre">{line}</span>
+                        </div>
+                      ))}
+                    </pre>
+                  )}
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <File className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
+                    <p className="font-mono text-xs text-zinc-600">select a file from the tree</p>
+                  </div>
                 </div>
-              </div>
-            )
+              )}
+            </div>
           )}
 
           {/* Diff view */}

@@ -72,3 +72,23 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ entries, path: filePath, repo });
 }
+
+export async function PUT(req: NextRequest) {
+  const { repo, path: filePath, content } = await req.json();
+
+  if (!repo) return NextResponse.json({ error: 'repo parameter required' }, { status: 400 });
+  if (!filePath) return NextResponse.json({ error: 'path parameter required' }, { status: 400 });
+  if (typeof content !== 'string') return NextResponse.json({ error: 'content must be a string' }, { status: 400 });
+  if (!fs.existsSync(repo)) return NextResponse.json({ error: 'repo not found' }, { status: 404 });
+
+  const target = safePath(repo, filePath);
+  if (!target) return NextResponse.json({ error: 'invalid path' }, { status: 400 });
+
+  // Ensure target is a file, not a directory
+  if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+    return NextResponse.json({ error: 'path is a directory' }, { status: 400 });
+  }
+
+  fs.writeFileSync(target, content, 'utf-8');
+  return NextResponse.json({ ok: true });
+}

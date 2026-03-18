@@ -225,10 +225,26 @@ export function getAllAgents(): Agent[] {
     FROM agents a
     LEFT JOIN (
       SELECT agent_id, content
-      FROM logs
-      WHERE (agent_id, id) IN (
-        SELECT agent_id, MAX(id) FROM logs GROUP BY agent_id
-      )
+      FROM logs l2
+      WHERE l2.stream = 'stdout'
+        AND length(l2.content) > 10
+        AND l2.content NOT LIKE '%thinking%'
+        AND l2.content NOT LIKE '%Osmosing%'
+        AND l2.content NOT LIKE '%Manifesting%'
+        AND l2.content NOT LIKE '%Crafting%'
+        AND l2.content NOT LIKE '%Transfiguring%'
+        AND (l2.agent_id, l2.id) IN (
+          SELECT agent_id, MAX(id)
+          FROM logs
+          WHERE stream = 'stdout'
+            AND length(content) > 10
+            AND content NOT LIKE '%thinking%'
+            AND content NOT LIKE '%Osmosing%'
+            AND content NOT LIKE '%Manifesting%'
+            AND content NOT LIKE '%Crafting%'
+            AND content NOT LIKE '%Transfiguring%'
+          GROUP BY agent_id
+        )
     ) l ON l.agent_id = a.id
     ORDER BY a.created_at DESC
   `).all() as Agent[];

@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [filter, setFilter] = useState<'all' | 'active' | 'done' | 'error' | 'idle'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
   const [searchQuery, setSearchQuery] = useState('');
+  const [repoFilter, setRepoFilter] = useState<string>('all');
   const [groupMode, setGroupMode] = useState<'flat' | 'repo' | 'status'>('flat');
   const [filterPresets, setFilterPresets] = useState<Record<string, { filter: string; sortBy: string; searchQuery: string }>>({});
 
@@ -190,12 +191,18 @@ export default function Dashboard() {
     return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
   }
 
+  // Unique repos for the repo filter dropdown
+  const uniqueRepos = Array.from(new Set(agents.filter(a => a.repo).map(a => a.repo as string))).sort();
+
   // Filtered + sorted agents
   const filteredAgents = agents
     .filter(a =>
       filter === 'all' ||
       a.status === filter ||
       (filter === 'active' && ['running', 'spawning'].includes(a.status))
+    )
+    .filter(a =>
+      repoFilter === 'all' || a.repo === repoFilter
     )
     .filter(a =>
       !searchQuery ||
@@ -330,6 +337,19 @@ export default function Dashboard() {
                 {f}{f !== 'all' && ` (${countForFilter(f)})`}
               </button>
             ))}
+            {uniqueRepos.length > 0 && (
+              <select
+                value={repoFilter}
+                onChange={e => setRepoFilter(e.target.value)}
+                className="bg-zinc-900 border border-zinc-700 rounded-full px-2 py-1 text-xs font-mono text-zinc-400 focus:outline-none focus:border-zinc-500"
+                title="Filter by repo"
+              >
+                <option value="all">all repos</option>
+                {uniqueRepos.map(r => (
+                  <option key={r} value={r}>{r.split('/').pop() || r}</option>
+                ))}
+              </select>
+            )}
             <div className="ml-auto flex items-center gap-2">
               <input
                 value={searchQuery}
