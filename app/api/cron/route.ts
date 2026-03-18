@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCronJobs, getCronJob, createCronJob, updateCronJob, deleteCronJob, recordCronRun, createAgent } from '@/lib/db';
 import { spawnAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
+import type { AgentType } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     spawnAgent({
       agentId,
       name: agentName,
-      type: (['claude', 'codex', 'custom', 'test'].includes(job.agent_type) ? job.agent_type : 'claude') as 'claude' | 'codex' | 'custom' | 'test',
+      type: (['claude', 'codex', 'opencode', 'custom', 'test'].includes(job.agent_type) ? job.agent_type : 'claude') as AgentType,
       task: job.task,
       repo: job.repo || undefined,
       model: job.model || 'sonnet',

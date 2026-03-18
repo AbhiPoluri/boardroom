@@ -39,6 +39,7 @@ interface WorkflowDef {
 const TYPE_THEME: Record<string, { dot: string; badge: string; ring: string; label: string }> = {
   claude: { dot: 'bg-blue-400', badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20', ring: 'ring-blue-500/20', label: 'text-blue-400' },
   codex: { dot: 'bg-amber-400', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20', ring: 'ring-amber-500/20', label: 'text-amber-400' },
+  opencode: { dot: 'bg-green-400', badge: 'bg-green-500/10 text-green-400 border-green-500/20', ring: 'ring-green-500/20', label: 'text-green-400' },
   custom: { dot: 'bg-purple-400', badge: 'bg-purple-500/10 text-purple-400 border-purple-500/20', ring: 'ring-purple-500/20', label: 'text-purple-400' },
   test: { dot: 'bg-emerald-400', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', ring: 'ring-emerald-500/20', label: 'text-emerald-400' },
 };

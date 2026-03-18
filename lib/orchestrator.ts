@@ -16,6 +16,8 @@ When the user gives you a task, plan ALL steps required and execute them in one 
 
 Available agent types:
 - "claude": Uses Claude Code CLI — for coding, analysis, research, file operations
+- "codex": Uses OpenAI Codex CLI — alternative coding agent with --full-auto mode
+- "opencode": Uses OpenCode CLI — open-source coding agent
 - "test": Quick shell command — for fast/simple checks
 
 You MUST respond with ONLY valid JSON in this exact format (no markdown, no extra text):

@@ -17,7 +17,7 @@ interface AgentConfig {
   prompt: string;
 }
 
-const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'custom', 'test'];
+const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'opencode', 'custom', 'test'];
 
 // --- Draft persistence ---
 const DRAFTS_KEY = 'boardroom:config-drafts';

@@ -96,10 +96,18 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
 
   insertLog(agentId, 'system', `Spawning (type: ${type}): ${task.slice(0, 80)}${task.length > 80 ? '…' : ''}`);
 
-  // claude type: use PTY so the full TUI renders with ANSI colors/boxes/spinners
-  if (type === 'claude') {
-    const modelFlag = model ? ` --model ${model}` : '';
-    const shellCmd = `${nvmInit} && claude --dangerously-skip-permissions${modelFlag} '${escapedTask}'`;
+  // PTY-based agent types: claude, codex, opencode — full TUI with ANSI
+  if (type === 'claude' || type === 'codex' || type === 'opencode') {
+    let shellCmd: string;
+    if (type === 'claude') {
+      const modelFlag = model ? ` --model ${model}` : '';
+      shellCmd = `${nvmInit} && claude --dangerously-skip-permissions${modelFlag} '${escapedTask}'`;
+    } else if (type === 'codex') {
+      shellCmd = `${nvmInit} && codex --full-auto '${escapedTask}'`;
+    } else {
+      // opencode — use `run` for non-interactive execution
+      shellCmd = `export PATH="$HOME/.opencode/bin:$PATH:/usr/local/bin:/opt/homebrew/bin" && opencode run '${escapedTask}'`;
+    }
 
     const ptyProc = pty.spawn('/bin/sh', ['-c', shellCmd], {
       name: 'xterm-256color',
@@ -249,10 +257,6 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
   let closeStdin = false;
 
   switch (type) {
-    case 'codex':
-      shellCmd = `${nvmInit} && codex '${escapedTask}'`;
-      closeStdin = true;
-      break;
     case 'test':
       shellCmd = `echo "boardroom agent started"; echo "task: ${escapedTask}"; sleep 1; echo "done"`;
       break;

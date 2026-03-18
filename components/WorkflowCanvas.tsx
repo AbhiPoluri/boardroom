@@ -28,6 +28,7 @@ interface CanvasProps {
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
   claude: { bg: '#1e3a5f20', border: '#3b82f640', text: '#60a5fa', dot: '#60a5fa' },
   codex: { bg: '#5c3d1e20', border: '#f59e0b40', text: '#fbbf24', dot: '#fbbf24' },
+  opencode: { bg: '#1e3a2f20', border: '#22c55e40', text: '#4ade80', dot: '#4ade80' },
   custom: { bg: '#4c1d9520', border: '#a855f740', text: '#c084fc', dot: '#c084fc' },
   test: { bg: '#14532d20', border: '#10b98140', text: '#34d399', dot: '#34d399' },
 };
@@ -1160,7 +1161,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
           <div className="mb-3">
             <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">type</label>
             <div className="flex items-center gap-1.5">
-              {(['claude', 'codex', 'custom', 'test'] as AgentType[]).map(t => {
+              {(['claude', 'codex', 'opencode', 'custom', 'test'] as AgentType[]).map(t => {
                 const c = TYPE_COLORS[t];
                 const isActive = selectedStep.type === t;
                 return (

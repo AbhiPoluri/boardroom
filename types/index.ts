@@ -1,4 +1,4 @@
-export type AgentType = 'claude' | 'codex' | 'custom' | 'test';
+export type AgentType = 'claude' | 'codex' | 'opencode' | 'custom' | 'test';
 export type AgentStatus = 'spawning' | 'running' | 'idle' | 'done' | 'error' | 'killed';
 export type LogStream = 'stdout' | 'stderr' | 'system';
 export type TaskStatus = 'pending' | 'assigned' | 'done';

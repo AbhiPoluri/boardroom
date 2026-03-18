@@ -162,7 +162,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
     } catch { /* ignore */ }
   };
 
-  const agentTypes: AgentType[] = ['claude', 'codex', 'custom', 'test'];
+  const agentTypes: AgentType[] = ['claude', 'codex', 'opencode', 'custom', 'test'];
 
   return (
     <Dialog open={open} onOpenChange={() => { resetForm(); onClose(); }}>
