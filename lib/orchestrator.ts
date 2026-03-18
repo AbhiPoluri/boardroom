@@ -29,7 +29,8 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
     {"tool": "kill_agent", "input": {"id": "agent-id-or-prefix"}},
     {"tool": "review_push_request", "input": {"id": "push-request-id", "action": "approve", "comment": "optional reason"}},
     {"tool": "create_workflow", "input": {"name": "my-workflow", "description": "what it does", "steps": [{"name": "step-1", "type": "claude", "task": "...", "model": "sonnet", "dependsOn": [], "stepType": "standard"}]}},
-    {"tool": "run_workflow", "input": {"name": "existing-workflow-name"}}
+    {"tool": "run_workflow", "input": {"name": "existing-workflow-name"}},
+    {"tool": "swarm_agents", "input": {"task": "overall goal", "agents": [{"name": "...", "subtask": "..."}, ...], "repo": "/path"}}
   ]
 }
 
@@ -51,6 +52,7 @@ Rules for actions:
 - For coding tasks always use type "claude"
 - "model" is optional: "haiku" for simple/fast tasks, "sonnet" for coding (default), "opus" for complex reasoning. Omit to use the default model.
 - "repo" is optional: absolute path to a git repo. When set, the agent gets its own git worktree (branch) of that repo. Use this for any task that involves reading or modifying code in a specific repo. Each agent gets an isolated branch so they can work in parallel without conflicts.
+- Use swarm_agents for large tasks that can be parallelized across 3-5 agents. Each agent gets an isolated git branch. Example: refactoring a large codebase — one agent per module.
 - IMPORTANT: When agents work on a repo, ALWAYS include in the task description: "When done, git add all new/changed files and commit with a descriptive message. Then submit a push request so changes can be reviewed and merged."
 - When spawning a follow-up agent that needs files from multiple prior agents' branches, include instructions like: "First merge branch boardroom/AGENT_ID into your branch using: git merge boardroom/AGENT_ID" so it can access all the work.
 
@@ -258,6 +260,35 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
       const { runWorkflow } = await import('@/lib/workflow-runner');
       const result = await runWorkflow(name, steps);
       return { runId: result.runId, agents: result.agents.length, message: `Workflow "${name}" started (run ${result.runId})` };
+    }
+    case 'swarm_agents': {
+      const { task, agents: agentDefs, repo, model } = action.input as {
+        task: string;
+        agents: Array<{ name: string; subtask: string }>;
+        repo?: string;
+        model?: string;
+      };
+      const ids: Array<{ name: string; id: string }> = [];
+      for (const def of agentDefs) {
+        const id = uuidv4();
+        const now = Date.now();
+        const swarmTask = `[SWARM: ${task}] Your subtask: ${def.subtask}. Coordinate with other agents working on the same goal.`;
+        createAgent({
+          id,
+          name: def.name,
+          type: 'claude',
+          status: 'spawning',
+          task: swarmTask,
+          repo: repo || null,
+          worktree_path: null,
+          pid: null,
+          port: null,
+          created_at: now,
+        });
+        await spawnAgent({ agentId: id, task: swarmTask, type: 'claude', name: def.name, repo, model: (model as string | undefined) || 'sonnet' });
+        ids.push({ name: def.name, id: id.slice(0, 8) });
+      }
+      return { agents: ids, message: `Swarm of ${ids.length} agents spawned` };
     }
     default:
       return { error: `Unknown tool: ${action.tool}` };

@@ -164,6 +164,15 @@ export default function AgentPage({ params }: AgentPageProps) {
             <StatusBadge status={agent.status} />
           </div>
           <div className="flex gap-2">
+            <Link href={`/agents/${id}/replay`}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono text-xs border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                replay
+              </Button>
+            </Link>
             {agent.repo && (
               <Button
                 variant="outline"

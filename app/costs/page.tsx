@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Zap, TrendingUp } from 'lucide-react';
+import { Zap, TrendingUp, Lightbulb } from 'lucide-react';
 import { CostChart } from '@/components/CostChart';
 
 interface TokenEntry {
@@ -262,6 +262,64 @@ export default function CostsPage() {
               <h2 className="font-mono text-xs text-zinc-500 uppercase tracking-wider mb-3">per-agent breakdown</h2>
               <CostChart entries={enriched} />
             </div>
+
+            {/* Optimization Suggestions */}
+            {(() => {
+              const suggestions: Array<{ text: string; savings: string }> = [];
+
+              // High-token sonnet agents
+              enriched.forEach(e => {
+                const totalTok = e.input_tokens + e.output_tokens;
+                const agentModel = modelBreakdown.find(m => normalizeModelName(m.model) === 'sonnet');
+                if (totalTok > 50000 && agentModel) {
+                  suggestions.push({
+                    text: `${e.agent_name} used ${(totalTok / 1000).toFixed(0)}k tokens on sonnet — consider using haiku for simple tasks`,
+                    savings: '~60% on those tasks',
+                  });
+                }
+              });
+
+              // Duplicate repos (agents working on same repo)
+              const agentList = Object.values(agents);
+              if (agentList.length === 0 && enriched.length >= 2) {
+                // No repo info available — skip repo-overlap check
+              }
+
+              // Low cache hit rate
+              if ((cache.read_tokens + cache.write_tokens) > 0 && cache.hit_rate < 0.2) {
+                suggestions.push({
+                  text: `Low cache hit rate (${(cache.hit_rate * 100).toFixed(1)}%) — running similar tasks sequentially improves caching`,
+                  savings: 'up to 10% on repeated context',
+                });
+              }
+
+              // High session cost
+              if (session.cost_usd > 5) {
+                suggestions.push({
+                  text: `Session cost: $${session.cost_usd.toFixed(2)} — use haiku for research and sonnet for coding to reduce by ~40%`,
+                  savings: `~$${(session.cost_usd * 0.4).toFixed(2)}`,
+                });
+              }
+
+              if (suggestions.length === 0) return null;
+
+              return (
+                <div>
+                  <h2 className="font-mono text-xs text-zinc-500 uppercase tracking-wider mb-3">optimization suggestions</h2>
+                  <div className="space-y-2">
+                    {suggestions.map((s, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                        <Lightbulb className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-mono text-[11px] text-zinc-300 leading-relaxed">{s.text}</p>
+                          <p className="font-mono text-[10px] text-amber-400/70 mt-1">estimated savings: {s.savings}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Token split */}
             {session.total_tokens > 0 && (

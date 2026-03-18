@@ -5,7 +5,7 @@ import {
   FolderOpen, File, ChevronRight, ChevronDown, GitBranch,
   Play, Check, X, MessageSquare, RefreshCw, Home,
   FileCode, Diff, GitPullRequest, Bot, Send, GripHorizontal,
-  Pencil, Save, Terminal, PanelLeftClose,
+  Pencil, Save, Terminal, PanelLeftClose, Sparkles, Search, Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -226,6 +226,22 @@ export default function WorkspacePage() {
   // Feature 1: file tree search
   const [fileSearch, setFileSearch] = useState('');
 
+  // Semantic search
+  const [searchMode, setSearchMode] = useState<'files' | 'semantic'>('files');
+  const [semanticQuery, setSemanticQuery] = useState('');
+  interface SemanticResult { file: string; line: number; context: string }
+  const [semanticResults, setSemanticResults] = useState<SemanticResult[]>([]);
+  const [semanticLoading, setSemanticLoading] = useState(false);
+
+  // AI diff review
+  const [diffReview, setDiffReview] = useState<string | null>(null);
+  const [diffReviewLoading, setDiffReviewLoading] = useState(false);
+  const [diffReviewOpen, setDiffReviewOpen] = useState(false);
+
+  // Repo switcher dropdown
+  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+  const repoDropdownRef = useRef<HTMLDivElement>(null);
+
   // Feature 3: resizable chat panel
   const [chatPanelHeight, setChatPanelHeight] = useState(220);
   const chatDragRef = useRef<{ startY: number; startH: number } | null>(null);
@@ -273,6 +289,17 @@ export default function WorkspacePage() {
       const lastRepo = localStorage.getItem('boardroom:workspace-repo');
       if (lastRepo) { setRepo(lastRepo); setRepoInput(lastRepo); }
     } catch {}
+  }, []);
+
+  // Close repo dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (repoDropdownRef.current && !repoDropdownRef.current.contains(e.target as Node)) {
+        setRepoDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   // Load chat messages from localStorage on mount
@@ -647,6 +674,58 @@ export default function WorkspacePage() {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
+  // Semantic search handler
+  const runSemanticSearch = async (q: string) => {
+    if (!q.trim() || !repo) return;
+    setSemanticLoading(true);
+    setSemanticResults([]);
+    try {
+      const res = await fetch(`/api/semantic-search?repo=${encodeURIComponent(repo)}&q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      setSemanticResults(data.results || []);
+    } catch {}
+    setSemanticLoading(false);
+  };
+
+  // AI diff review handler
+  const runDiffReview = async () => {
+    if (!diffData?.diff || diffReviewLoading) return;
+    setDiffReviewLoading(true);
+    setDiffReview(null);
+    const truncated = diffData.diff.slice(0, 3000);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `[workspace diff review] Review this git diff and annotate each change with a brief explanation of what it does and any concerns:\n\n${truncated}`,
+        }),
+      });
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No stream');
+      const decoder = new TextDecoder();
+      let text = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'text') text += event.content;
+          } catch {}
+        }
+      }
+      setDiffReview(text || 'No review generated.');
+      setDiffReviewOpen(true);
+    } catch {
+      setDiffReview('Failed to get AI review.');
+      setDiffReviewOpen(true);
+    }
+    setDiffReviewLoading(false);
+  };
+
   // ─── Render helpers ──────────────────────────────────────────────────────
 
   const renderTree = (items: FileEntry[], depth = 0, search = '') => {
@@ -864,7 +943,49 @@ export default function WorkspacePage() {
         </button>
         <h1 className="font-mono text-sm text-zinc-100">workspace</h1>
         <Separator orientation="vertical" className="h-4" />
-        <span className="font-mono text-[10px] text-zinc-500 truncate max-w-[300px]">{repo}</span>
+        {/* Repo path — clickable for switcher */}
+        <div className="relative" ref={repoDropdownRef}>
+          <button
+            onClick={() => setRepoDropdownOpen(o => !o)}
+            className="flex items-center gap-1 font-mono text-[10px] text-zinc-500 hover:text-zinc-300 truncate max-w-[300px] transition-colors"
+            title={repo}
+          >
+            {repo}
+            <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-700" />
+          </button>
+          {repoDropdownOpen && (
+            <div className="absolute top-full left-0 mt-1 z-50 w-72 bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
+              {recentRepos.filter(r => r !== repo).length > 0 ? (
+                <div>
+                  <div className="px-3 py-1.5 border-b border-zinc-800">
+                    <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">recent repos</span>
+                  </div>
+                  {recentRepos.filter(r => r !== repo).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => { openRepo(r); setRepoDropdownOpen(false); }}
+                      className="w-full text-left px-3 py-2 hover:bg-zinc-900 transition-colors group"
+                    >
+                      <div className="font-mono text-[11px] text-zinc-300 truncate">{r.split('/').pop()}</div>
+                      <div className="font-mono text-[10px] text-zinc-600 truncate">{r}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-3 py-2 text-[10px] font-mono text-zinc-700">no other recent repos</div>
+              )}
+              <div className="border-t border-zinc-800">
+                <button
+                  onClick={() => { setRepo(''); setOpenFiles([]); setActiveFileIdx(0); setEditedContent(null); setIsEditing(false); localStorage.removeItem('boardroom:workspace-repo'); setRepoDropdownOpen(false); }}
+                  className="w-full text-left flex items-center gap-1.5 px-3 py-2 hover:bg-zinc-900 transition-colors text-zinc-500 hover:text-zinc-300"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span className="font-mono text-[10px]">open another repo</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         {repoBranch && (
           <span className="flex items-center gap-1 font-mono text-[10px] text-emerald-400/80 flex-shrink-0">
             <GitBranch className="w-3 h-3" />
@@ -890,6 +1011,16 @@ export default function WorkspacePage() {
           >
             <Diff className="w-3 h-3" /> diff
           </button>
+          {activeTab === 'diff' && diffFiles.length > 0 && (
+            <button
+              onClick={runDiffReview}
+              disabled={diffReviewLoading}
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-mono transition-colors text-zinc-500 hover:text-zinc-300 border border-zinc-700/40 hover:border-zinc-600 disabled:opacity-50"
+            >
+              <Sparkles className="w-3 h-3" />
+              {diffReviewLoading ? 'reviewing...' : 'AI review'}
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('prs')}
             className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-mono transition-colors ${
@@ -947,16 +1078,81 @@ export default function WorkspacePage() {
               </button>
             </div>
           </div>
-          <div className="px-2 pb-1.5">
-            <input
-              value={fileSearch}
-              onChange={(e) => setFileSearch(e.target.value)}
-              placeholder="search files..."
-              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-400 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-600"
-            />
+          <div className="px-2 pb-1">
+            {/* Search mode toggle */}
+            <div className="flex items-center gap-1 mb-1.5">
+              <button
+                onClick={() => setSearchMode('files')}
+                className={`flex-1 py-0.5 rounded text-[9px] font-mono transition-colors ${searchMode === 'files' ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+              >
+                files
+              </button>
+              <button
+                onClick={() => setSearchMode('semantic')}
+                className={`flex-1 py-0.5 rounded text-[9px] font-mono transition-colors flex items-center justify-center gap-0.5 ${searchMode === 'semantic' ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+              >
+                <Sparkles className="w-2.5 h-2.5" /> semantic
+              </button>
+            </div>
+            {searchMode === 'files' ? (
+              <input
+                value={fileSearch}
+                onChange={(e) => setFileSearch(e.target.value)}
+                placeholder="search files..."
+                className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-400 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-600"
+              />
+            ) : (
+              <div className="flex items-center gap-1">
+                <input
+                  value={semanticQuery}
+                  onChange={(e) => setSemanticQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && runSemanticSearch(semanticQuery)}
+                  placeholder="authentication logic..."
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-400 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-600"
+                />
+                <button
+                  onClick={() => runSemanticSearch(semanticQuery)}
+                  disabled={semanticLoading}
+                  className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 disabled:opacity-50"
+                >
+                  <Search className="w-3 h-3" />
+                </button>
+              </div>
+            )}
           </div>
-          {entries.length > 0 ? renderTree(entries, 0, fileSearch) : (
-            <div className="px-3 py-4 text-[10px] font-mono text-zinc-700 text-center">loading...</div>
+          {/* Semantic search results */}
+          {searchMode === 'semantic' && (
+            <div className="px-2 pb-1">
+              {semanticLoading && (
+                <div className="text-[10px] font-mono text-zinc-600 py-2 text-center animate-pulse">searching...</div>
+              )}
+              {!semanticLoading && semanticResults.length > 0 && (
+                <div className="space-y-0.5">
+                  {semanticResults.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => openFile(r.file.startsWith(repo) ? r.file.slice(repo.length).replace(/^\//, '') : r.file)}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-zinc-800/60 transition-colors group"
+                    >
+                      <div className="font-mono text-[10px] text-zinc-400 truncate group-hover:text-zinc-200">
+                        {r.file.startsWith(repo) ? r.file.slice(repo.length).replace(/^\//, '') : r.file}
+                      </div>
+                      <div className="font-mono text-[9px] text-zinc-600 truncate mt-0.5">
+                        L{r.line}: {r.context.trim().slice(0, 60)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!semanticLoading && semanticQuery && semanticResults.length === 0 && (
+                <div className="text-[10px] font-mono text-zinc-700 py-2 text-center">no matches</div>
+              )}
+            </div>
+          )}
+          {searchMode === 'files' && (
+            entries.length > 0
+              ? renderTree(entries, 0, fileSearch)
+              : <div className="px-3 py-4 text-[10px] font-mono text-zinc-700 text-center">loading...</div>
           )}
 
           {/* Push requests in sidebar */}
@@ -1200,6 +1396,29 @@ export default function WorkspacePage() {
                 <div className="text-center py-12">
                   <Diff className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
                   <p className="font-mono text-xs text-zinc-600">no changes detected</p>
+                </div>
+              )}
+
+              {/* AI Diff Review */}
+              {(diffReview || diffReviewLoading) && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => setDiffReviewOpen(o => !o)}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-t-lg bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3 text-blue-400" />
+                    <span>AI review</span>
+                    <ChevronRight className={`w-3 h-3 ml-auto transition-transform ${diffReviewOpen ? 'rotate-90' : ''}`} />
+                  </button>
+                  {diffReviewOpen && (
+                    <div className="border border-t-0 border-zinc-800 rounded-b-lg bg-zinc-900 p-4">
+                      {diffReviewLoading ? (
+                        <div className="text-[11px] font-mono text-zinc-600 animate-pulse">reviewing diff...</div>
+                      ) : (
+                        <pre className="font-mono text-[11px] text-zinc-300 leading-relaxed whitespace-pre-wrap">{diffReview}</pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

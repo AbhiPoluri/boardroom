@@ -567,6 +567,38 @@ export default function CronPage() {
               </button>
             </div>
 
+            {/* Scan presets — only show for new jobs */}
+            {!editingId && (
+              <div className="px-5 pt-4 pb-0">
+                <p className="text-[10px] font-mono text-zinc-600 mb-2 uppercase tracking-wider">quick presets</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {([
+                    { label: 'daily security scan', name: 'security-scan', schedule: '0 9 * * *', task: 'Audit this codebase for security vulnerabilities based on the OWASP Top 10. Check for SQL injection, XSS, hardcoded secrets, and insecure dependencies. Report findings with severity levels.' },
+                    { label: 'weekly dep check', name: 'dependency-check', schedule: '0 10 * * 1', task: 'Check for outdated dependencies. Identify packages with newer versions, assess breaking changes, and suggest updates. Prioritize security patches.' },
+                    { label: 'nightly test run', name: 'nightly-tests', schedule: '0 2 * * *', task: 'Run the full test suite and report any failing tests. Summarize test coverage and flag any regressions.' },
+                    { label: 'PR review sweep', name: 'pr-review', schedule: '*/30 * * * *', task: 'Check for any new pull requests or recent commits. Review code changes for bugs, security issues, and style violations. Provide actionable feedback.' },
+                  ] as { label: string; name: string; schedule: string; task: string }[]).map((preset) => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => updateForm(() => ({
+                        name: preset.name,
+                        schedule: preset.schedule,
+                        task: preset.task,
+                        agent_type: 'claude',
+                        model: 'sonnet',
+                        repo: form.repo,
+                      }))}
+                      className="px-2.5 py-1 rounded-full text-[10px] font-mono border border-zinc-700 text-zinc-400 hover:border-emerald-700 hover:text-emerald-400 hover:bg-emerald-950/30 transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 border-t border-zinc-800" />
+              </div>
+            )}
+
             {/* Form body */}
             <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
               {error && (

@@ -141,6 +141,42 @@ function BranchCard({
   );
 }
 
+function colorizeGraph(raw: string): React.ReactNode[] {
+  return raw.split('\n').map((line, i) => {
+    // Colorize branch refs: HEAD -> amber, main/master -> green, boardroom/* -> blue
+    const colored = line
+      .replace(/HEAD(?:\s*->\s*[\w/.-]+)?/g, match => `\x02HEAD\x03${match.slice(4)}`)
+      .replace(/\b(main|master)\b/g, '\x04$1\x05')
+      .replace(/\bboardroom\/[\w/-]+/g, '\x06$&\x07');
+
+    const parts: React.ReactNode[] = [];
+    let buf = '';
+    let mode: 'normal' | 'head' | 'main' | 'boardroom' = 'normal';
+    const flushBuf = () => {
+      if (buf) {
+        const cls = mode === 'head' ? 'text-amber-400 font-semibold'
+          : mode === 'main' ? 'text-emerald-400 font-semibold'
+          : mode === 'boardroom' ? 'text-blue-400 font-semibold'
+          : 'text-zinc-400';
+        parts.push(<span key={parts.length} className={cls}>{buf}</span>);
+        buf = '';
+      }
+    };
+    for (let j = 0; j < colored.length; j++) {
+      const ch = colored[j];
+      if (ch === '\x02') { flushBuf(); mode = 'head'; }
+      else if (ch === '\x03') { flushBuf(); mode = 'normal'; }
+      else if (ch === '\x04') { flushBuf(); mode = 'main'; }
+      else if (ch === '\x05') { flushBuf(); mode = 'normal'; }
+      else if (ch === '\x06') { flushBuf(); mode = 'boardroom'; }
+      else if (ch === '\x07') { flushBuf(); mode = 'normal'; }
+      else buf += ch;
+    }
+    flushBuf();
+    return <div key={i}>{parts}</div>;
+  });
+}
+
 export default function BranchesPage() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,14 +189,25 @@ export default function BranchesPage() {
   const [merging, setMerging] = useState(false);
   const [mergeResult, setMergeResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState('');
+  const [gitGraph, setGitGraph] = useState<string | null>(null);
+  const [showGraph, setShowGraph] = useState(true);
 
   const fetchBranches = useCallback(() => {
     setError('');
     fetch('/api/branches')
       .then((r) => r.json())
       .then((data) => {
-        setBranches(data.branches || []);
+        const b: BranchInfo[] = data.branches || [];
+        setBranches(b);
         setLoading(false);
+        // Fetch git graph for the first repo we find
+        const repoOwner = b.find(br => br.repo);
+        if (repoOwner?.repo) {
+          fetch(`/api/git-graph?repo=${encodeURIComponent(repoOwner.repo)}`)
+            .then(r => r.json())
+            .then(d => { if (d.graph) setGitGraph(d.graph); })
+            .catch(() => {});
+        }
       })
       .catch(() => { setError('Failed to load branches'); setLoading(false); });
   }, []);
@@ -273,6 +320,24 @@ export default function BranchesPage() {
       {error && (
         <div className="mx-4 mt-2 px-4 py-3 bg-red-950/30 border border-red-900 rounded-lg text-sm text-red-400 font-mono">
           {error}
+        </div>
+      )}
+
+      {/* Git graph */}
+      {gitGraph && (
+        <div className="flex-shrink-0 border-b border-zinc-800 bg-zinc-950/40">
+          <button
+            onClick={() => setShowGraph(g => !g)}
+            className="flex items-center gap-2 px-4 py-2 text-[10px] font-mono text-zinc-500 uppercase tracking-wider hover:text-zinc-400 transition-colors w-full text-left"
+          >
+            {showGraph ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            git graph
+          </button>
+          {showGraph && (
+            <pre className="px-4 pb-3 font-mono text-[11px] leading-snug overflow-x-auto max-h-48 overflow-y-auto">
+              {colorizeGraph(gitGraph)}
+            </pre>
+          )}
         </div>
       )}
 

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Bot, Plus, Trash2, Save, Upload, FileText, Eye } from 'lucide-react';
+import { Bot, Plus, Trash2, Save, Upload, FileText, Eye, Package, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AgentType } from '@/types';
 
 interface AgentConfig {
@@ -18,6 +18,24 @@ interface AgentConfig {
 }
 
 const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'opencode', 'custom', 'test'];
+
+// --- Agent Templates ---
+interface AgentTemplate {
+  name: string;
+  desc: string;
+  type: AgentType;
+  model: string;
+  prompt: string;
+}
+
+const AGENT_TEMPLATES: AgentTemplate[] = [
+  { name: 'code-reviewer', desc: 'Reviews PRs for bugs, security, and style', type: 'claude', model: 'sonnet', prompt: 'Review the code changes in this repo. Look for bugs, security issues, style violations, and logic errors. Provide clear, actionable feedback with line references where possible.' },
+  { name: 'security-auditor', desc: 'Scans for OWASP top 10 vulnerabilities', type: 'claude', model: 'haiku', prompt: 'Audit this codebase for security vulnerabilities based on the OWASP Top 10. Check for SQL injection, XSS, CSRF, insecure dependencies, hardcoded secrets, and improper authentication. Report findings with severity levels.' },
+  { name: 'test-writer', desc: 'Generates unit and integration tests', type: 'claude', model: 'sonnet', prompt: 'Write comprehensive tests for this codebase. Generate unit tests for business logic and utilities, integration tests for API endpoints and database operations, and edge case tests for critical paths. Use the existing test framework and conventions.' },
+  { name: 'docs-generator', desc: 'Creates README, API docs, and comments', type: 'claude', model: 'haiku', prompt: 'Generate documentation for this codebase. Create or update the README with setup instructions, usage examples, and architecture overview. Add JSDoc/docstring comments to undocumented functions. Document API endpoints if present.' },
+  { name: 'refactorer', desc: 'Simplifies and cleans up code', type: 'claude', model: 'sonnet', prompt: 'Refactor this code to improve readability, maintainability, and performance. Eliminate duplication, simplify complex logic, improve naming, and apply appropriate design patterns. Keep behavior identical while improving structure.' },
+  { name: 'dependency-updater', desc: 'Updates packages and fixes breaking changes', type: 'claude', model: 'sonnet', prompt: 'Check for outdated dependencies in this project. Identify packages that have newer versions, assess breaking changes, update package files, and fix any compatibility issues introduced by the updates. Prioritize security patches.' },
+];
 
 // --- Draft persistence ---
 const DRAFTS_KEY = 'boardroom:config-drafts';
@@ -81,6 +99,9 @@ export default function ConfigsPage() {
   const [drafts, setDrafts] = useState<DraftState[]>([]);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const isDirty = useRef(false);
+
+  // Templates section
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   // Raw markdown view
   const [rawMode, setRawMode] = useState(false);
@@ -338,6 +359,24 @@ export default function ConfigsPage() {
     updateRaw('', 'claude', 'sonnet', '', '');
   };
 
+  const loadTemplate = (t: AgentTemplate) => {
+    const newDraftId = genDraftId();
+    setCurrentDraftId(newDraftId);
+    setActiveDraftId(newDraftId);
+    setSelected(null);
+    setEdName(t.name);
+    setEdType(t.type);
+    setEdModel(t.model);
+    setEdDescription(t.desc);
+    setEdPrompt(t.prompt);
+    setIsNew(true);
+    setDirty(true);
+    isDirty.current = true;
+    setError('');
+    setSuccess('');
+    updateRaw(t.name, t.type, t.model, t.desc, t.prompt);
+  };
+
   const updateRaw = (name: string, type: string, model: string, desc: string, prompt: string) => {
     const lines = ['---', `name: ${name}`, `type: ${type}`];
     if (model) lines.push(`model: ${model}`);
@@ -543,6 +582,49 @@ export default function ConfigsPage() {
                   ))}
                 </>
               )}
+              {/* Templates section (empty state) */}
+              <div className="border-t border-zinc-800 mt-2">
+                <button
+                  onClick={() => setTemplatesOpen(o => !o)}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-zinc-900/60 transition-colors"
+                >
+                  {templatesOpen ? (
+                    <ChevronDown className="w-3 h-3 text-zinc-600" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-zinc-600" />
+                  )}
+                  <Package className="w-3 h-3 text-zinc-500" />
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">templates</span>
+                  <span className="ml-auto text-[10px] font-mono text-zinc-700">{AGENT_TEMPLATES.length}</span>
+                </button>
+                {templatesOpen && (
+                  <div className="pb-2">
+                    {AGENT_TEMPLATES.map((t) => (
+                      <div
+                        key={t.name}
+                        className="mx-2 mb-1 rounded bg-zinc-900 border border-zinc-800 px-2.5 py-2 group hover:border-zinc-700 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-mono text-[11px] text-zinc-300 truncate">{t.name}</div>
+                            <div className="font-mono text-[10px] text-zinc-600 leading-tight mt-0.5 line-clamp-2">{t.desc}</div>
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-600 border border-zinc-700">{t.type}</span>
+                              <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-600 border border-zinc-700">{t.model}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => loadTemplate(t)}
+                          className="mt-1.5 w-full text-center text-[10px] font-mono px-2 py-0.5 rounded border border-zinc-700 text-zinc-500 hover:border-emerald-700 hover:text-emerald-400 hover:bg-emerald-950/30 transition-colors"
+                        >
+                          use
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <>
@@ -602,6 +684,49 @@ export default function ConfigsPage() {
                   ))}
                 </>
               )}
+              {/* Templates section */}
+              <div className="border-t border-zinc-800 mt-2">
+                <button
+                  onClick={() => setTemplatesOpen(o => !o)}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-zinc-900/60 transition-colors"
+                >
+                  {templatesOpen ? (
+                    <ChevronDown className="w-3 h-3 text-zinc-600" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-zinc-600" />
+                  )}
+                  <Package className="w-3 h-3 text-zinc-500" />
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">templates</span>
+                  <span className="ml-auto text-[10px] font-mono text-zinc-700">{AGENT_TEMPLATES.length}</span>
+                </button>
+                {templatesOpen && (
+                  <div className="pb-2">
+                    {AGENT_TEMPLATES.map((t) => (
+                      <div
+                        key={t.name}
+                        className="mx-2 mb-1 rounded bg-zinc-900 border border-zinc-800 px-2.5 py-2 group hover:border-zinc-700 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-mono text-[11px] text-zinc-300 truncate">{t.name}</div>
+                            <div className="font-mono text-[10px] text-zinc-600 leading-tight mt-0.5 line-clamp-2">{t.desc}</div>
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-600 border border-zinc-700">{t.type}</span>
+                              <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-600 border border-zinc-700">{t.model}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => loadTemplate(t)}
+                          className="mt-1.5 w-full text-center text-[10px] font-mono px-2 py-0.5 rounded border border-zinc-700 text-zinc-500 hover:border-emerald-700 hover:text-emerald-400 hover:bg-emerald-950/30 transition-colors"
+                        >
+                          use
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
