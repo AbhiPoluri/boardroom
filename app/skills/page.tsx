@@ -579,11 +579,11 @@ export default function SkillsPage() {
                   <div className="flex items-start gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-[11px] font-mono text-amber-300">use the skill-creator for best results</p>
+                      <p className="text-[11px] font-mono text-amber-300">tip: create skills in Claude Code</p>
                       <p className="text-[10px] font-mono text-zinc-500 mt-1 leading-relaxed">
-                        in Claude Code, run: <code className="text-amber-400/70 bg-zinc-900 px-1 rounded">/skill-creator</code> to interactively
-                        build skills with proper frontmatter, trigger phrases, and validation.
-                        you can then upload the generated SKILL.md here.
+                        ask Claude Code to create a skill with a description of what you want.
+                        it will generate the SKILL.md with proper frontmatter and trigger phrases.
+                        then upload the file here or drag & drop it onto this page.
                       </p>
                     </div>
                   </div>
@@ -597,7 +597,7 @@ export default function SkillsPage() {
                 <div className="flex items-start gap-2.5 p-3 rounded-lg border border-blue-800/30 bg-blue-950/15">
                   <Info className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
                   <p className="text-[10px] font-mono text-zinc-400 leading-relaxed">
-                    for best results, use <code className="text-blue-400/70 bg-zinc-900 px-1 rounded">/skill-creator</code> in Claude Code — it walks you through use case definition, frontmatter generation, instruction writing, and validation. then upload the SKILL.md here. or create one manually below.
+                    for best results, ask Claude Code to create a skill for you — describe what you want and it will generate SKILL.md with proper frontmatter and triggers. upload the file here or create one manually below.
                   </p>
                 </div>
                 <h2 className="font-mono text-sm text-zinc-200">create new skill</h2>
