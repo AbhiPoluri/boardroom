@@ -135,7 +135,7 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
 
           // system init event — CLI is starting up
           if (event.type === 'system' && event.subtype === 'init') {
-            if (onChunk) onChunk('[starting up]');
+            if (onChunk) onChunk('thinking...');
           }
 
           // assistant message — contains the full response text
@@ -143,6 +143,7 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
             for (const block of event.message.content) {
               if (block.type === 'text' && block.text) {
                 fullText += block.text;
+                // Only stream readable text, not JSON blobs
                 if (onChunk) onChunk(block.text);
               }
             }
@@ -154,7 +155,7 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
             if (onChunk) onChunk(event.delta.text);
           }
 
-          // result event — final
+          // result event — final (don't call onChunk — this is metadata)
           if (event.type === 'result') {
             const text = event.result ?? '';
             if (text && !fullText) fullText = text;
@@ -415,8 +416,11 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
     if (thinkingBuffer.length > 0) {
       const newText = thinkingBuffer.splice(0).join('');
       streamedText += newText;
-      // Yield as thinking event — the final parsed JSON response replaces this
-      yield { type: 'text' as const, content: `\n💭 ${newText}` };
+      // Only yield readable thinking text, skip JSON fragments
+      const clean = newText.trim();
+      if (clean && !clean.startsWith('{') && !clean.startsWith('"') && !clean.includes('"input_tokens"')) {
+        yield { type: 'text' as const, content: `\n💭 ${clean}` };
+      }
     }
   }
   // Flush remaining buffer
