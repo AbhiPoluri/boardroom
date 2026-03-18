@@ -88,7 +88,7 @@ interface CLIResult {
   model?: string;
 }
 
-export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
+export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => void): Promise<CLIResult> {
   // Clear old PTY chunks so the terminal starts fresh
   clearPtyChunks(ORCHESTRATOR_ID);
 
@@ -118,7 +118,10 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
       // Store raw PTY chunks for xterm.js rendering
       insertPtyChunk(ORCHESTRATOR_ID, Buffer.from(data).toString('base64'));
       // Collect plain text for JSON parsing
-      output += stripAnsi(data);
+      const plain = stripAnsi(data);
+      output += plain;
+      // Stream thinking output to caller
+      if (onChunk && plain.trim()) onChunk(plain);
     });
 
     ptyProc.onExit(({ exitCode }) => {
@@ -333,25 +336,55 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
 
   let parsed: OrchestratorResponse;
 
+  // Stream live thinking output as the CLI runs
+  // Use a shared queue so we can yield thinking events while awaiting the CLI
+  const thinkingQueue: string[] = [];
+  let cliDone = false;
+  let cliResult: CLIResult | null = null;
+  let cliError: Error | null = null;
+
+  const cliPromise = runClaudeCLI(fullPrompt, (chunk) => {
+    thinkingQueue.push(chunk);
+  }).then(result => { cliResult = result; cliDone = true; })
+    .catch(err => { cliError = err instanceof Error ? err : new Error(String(err)); cliDone = true; });
+
+  // Drain thinking queue while CLI runs
+  while (!cliDone) {
+    await new Promise(r => setTimeout(r, 300));
+    while (thinkingQueue.length > 0) {
+      const chunk = thinkingQueue.shift()!;
+      // Filter out JSON and noise — only show readable text
+      const trimmed = chunk.trim();
+      if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('"') && trimmed.length > 3) {
+        yield { type: 'text' as const, content: `\n💭 ${trimmed}` };
+      }
+    }
+  }
+  // Drain any remaining
+  while (thinkingQueue.length > 0) thinkingQueue.shift();
+
+  if (cliError) throw cliError;
+  if (!cliResult) throw new Error('CLI returned no result');
+
   try {
-    const cliResult = await runClaudeCLI(fullPrompt);
+    const cli = cliResult as CLIResult;
 
     // Record orchestrator token usage
-    if (cliResult.usage) {
+    if (cli.usage) {
       recordTokenUsage({
         agent_id: null,
         source: 'orchestrator',
-        input_tokens: cliResult.usage.input_tokens,
-        output_tokens: cliResult.usage.output_tokens,
-        cache_read_tokens: cliResult.usage.cache_read_tokens,
-        cache_write_tokens: cliResult.usage.cache_write_tokens,
-        cost_usd: cliResult.cost_usd || 0,
-        model: cliResult.model || null,
+        input_tokens: cli.usage.input_tokens,
+        output_tokens: cli.usage.output_tokens,
+        cache_read_tokens: cli.usage.cache_read_tokens,
+        cache_write_tokens: cli.usage.cache_write_tokens,
+        cost_usd: cli.cost_usd || 0,
+        model: cli.model || null,
       });
     }
 
     // Extract JSON — claude might wrap in markdown code blocks
-    const rawOutput = cliResult.text;
+    const rawOutput = cli.text;
     const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/) || rawOutput.match(/(\{[\s\S]*\})/);
     const jsonStr = jsonMatch ? jsonMatch[1] : rawOutput;
     try {

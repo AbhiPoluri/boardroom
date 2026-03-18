@@ -346,7 +346,10 @@ export default function WorkspacePage() {
           if (!line.startsWith('data: ')) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === 'text') { assistantText += event.content; setChatStatus('responding...'); }
+            if (event.type === 'text') {
+              assistantText += event.content;
+              setChatStatus(event.content?.startsWith('\n💭') ? 'thinking...' : 'responding...');
+            }
             if (event.type === 'tool_use') { tools.push({ tool: event.tool }); setChatStatus(`running ${event.tool}...`); }
             if (event.type === 'tool_result' && tools.length > 0) {
               tools[tools.length - 1].result = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
