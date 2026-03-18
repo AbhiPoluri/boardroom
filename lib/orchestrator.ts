@@ -73,7 +73,7 @@ Rules for reply:
 - Example bad reply: "OK, spawning agents." (too vague)`;
 
 export interface OrchestratorEvent {
-  type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error';
+  type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'done' | 'error';
   content?: string;
   tool?: string;
   input?: Record<string, unknown>;
@@ -422,7 +422,7 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
       const clean = newText.trim();
       const isJson = clean.includes('"type"') || clean.includes('"usage"') || clean.includes('"token') || clean.startsWith('{') || clean.startsWith('"') || clean.includes('session_id') || clean.includes('cost_usd') || clean.includes('modelUsage');
       if (clean && !isJson && clean.length > 5) {
-        yield { type: 'text' as const, content: `\n💭 ${clean}` };
+        yield { type: 'thinking' as const, content: clean };
       }
     }
   }

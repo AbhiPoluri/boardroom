@@ -129,7 +129,7 @@ export default function WorkspacePage() {
   const [spawning, setSpawning] = useState(false);
 
   // Workspace orchestrator chat
-  interface ChatMsg { role: 'user' | 'assistant'; content: string; tools?: Array<{ tool: string; result?: string }> }
+  interface ChatMsg { role: 'user' | 'assistant'; content: string; thinking?: string; tools?: Array<{ tool: string; result?: string }> }
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -346,9 +346,12 @@ export default function WorkspacePage() {
           if (!line.startsWith('data: ')) continue;
           try {
             const event = JSON.parse(line.slice(6));
+            if (event.type === 'thinking') {
+              setChatStatus(event.content || 'thinking...');
+            }
             if (event.type === 'text') {
               assistantText += event.content;
-              setChatStatus(event.content?.startsWith('\n💭') ? 'thinking...' : 'responding...');
+              setChatStatus('responding...');
             }
             if (event.type === 'tool_use') { tools.push({ tool: event.tool }); setChatStatus(`running ${event.tool}...`); }
             if (event.type === 'tool_result' && tools.length > 0) {
