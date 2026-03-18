@@ -138,15 +138,17 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
             if (onChunk) onChunk('thinking...');
           }
 
-          // assistant message — contains the full response text
+          // assistant message — contains the full response text (raw orchestrator JSON)
           if (event.type === 'assistant' && event.message?.content) {
             for (const block of event.message.content) {
               if (block.type === 'text' && block.text) {
                 fullText += block.text;
-                // Only stream readable text, not JSON blobs
-                if (onChunk) onChunk(block.text);
+                // Don't call onChunk here — the text is raw orchestrator JSON
+                // It gets parsed into reply/actions later by the generator
               }
             }
+            // Signal that a response arrived
+            if (onChunk) onChunk('processing response...');
           }
 
           // Content block delta — streaming text (if available)
@@ -416,9 +418,10 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
     if (thinkingBuffer.length > 0) {
       const newText = thinkingBuffer.splice(0).join('');
       streamedText += newText;
-      // Only yield readable thinking text, skip JSON fragments
+      // Only yield clean readable text — aggressively filter JSON and metadata
       const clean = newText.trim();
-      if (clean && !clean.startsWith('{') && !clean.startsWith('"') && !clean.includes('"input_tokens"')) {
+      const isJson = clean.includes('"type"') || clean.includes('"usage"') || clean.includes('"token') || clean.startsWith('{') || clean.startsWith('"') || clean.includes('session_id') || clean.includes('cost_usd') || clean.includes('modelUsage');
+      if (clean && !isJson && clean.length > 5) {
         yield { type: 'text' as const, content: `\n💭 ${clean}` };
       }
     }
