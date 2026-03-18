@@ -110,6 +110,11 @@ export default function WorkspacePage() {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [dirContents, setDirContents] = useState<Record<string, FileEntry[]>>({});
 
+  // Agents for the current repo
+  interface AgentInfo { id: string; name: string; type: string; status: string; task: string; repo: string | null; created_at: number }
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [showAgents, setShowAgents] = useState(true);
+
   const [activeFile, setActiveFile] = useState<{ path: string; content: string; ext: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'code' | 'diff' | 'prs'>('code');
 
@@ -125,11 +130,13 @@ export default function WorkspacePage() {
 
   const [recentRepos, setRecentRepos] = useState<string[]>([]);
 
-  // Load recent repos from localStorage
+  // Load recent repos + last open repo from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem('boardroom:recent-repos');
       if (stored) setRecentRepos(JSON.parse(stored));
+      const lastRepo = localStorage.getItem('boardroom:workspace-repo');
+      if (lastRepo) { setRepo(lastRepo); setRepoInput(lastRepo); }
     } catch {}
   }, []);
 
@@ -160,6 +167,7 @@ export default function WorkspacePage() {
     setExpandedDirs(new Set());
     setDirContents({});
     saveRecentRepo(r);
+    localStorage.setItem('boardroom:workspace-repo', r);
   };
 
   useEffect(() => {
@@ -196,6 +204,17 @@ export default function WorkspacePage() {
   };
 
   useEffect(() => { fetchPRs(); const iv = setInterval(fetchPRs, 10000); return () => clearInterval(iv); }, []);
+
+  // Poll agents
+  const fetchAgents = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agents');
+      const data = await res.json();
+      setAgents(data.agents || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchAgents(); const iv = setInterval(fetchAgents, 5000); return () => clearInterval(iv); }, [fetchAgents]);
 
   // View PR diff
   const viewPR = async (pr: PushRequest) => {
@@ -386,7 +405,7 @@ export default function WorkspacePage() {
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
-        <button onClick={() => { setRepo(''); setActiveFile(null); }} className="text-zinc-600 hover:text-zinc-400">
+        <button onClick={() => { setRepo(''); setActiveFile(null); localStorage.removeItem('boardroom:workspace-repo'); }} className="text-zinc-600 hover:text-zinc-400">
           <Home className="w-3.5 h-3.5" />
         </button>
         <h1 className="font-mono text-sm text-zinc-100">workspace</h1>
@@ -627,6 +646,95 @@ export default function WorkspacePage() {
             )
           )}
         </div>
+
+        {/* Right panel: agent cards */}
+        {showAgents && (
+          <div className="w-[260px] flex-shrink-0 border-l border-zinc-800 overflow-y-auto bg-zinc-950/30">
+            <div className="flex items-center justify-between px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <Bot className="w-3 h-3 text-zinc-600" />
+                <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">agents</span>
+                <Badge variant="outline" className="text-[8px] font-mono h-4 px-1">
+                  {agents.filter(a => a.status === 'running' || a.status === 'spawning').length} active
+                </Badge>
+              </div>
+              <button onClick={() => setShowAgents(false)} className="text-zinc-700 hover:text-zinc-400">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Repo agents first */}
+            {(() => {
+              const repoAgents = agents.filter(a => a.repo === repo);
+              const otherAgents = agents.filter(a => a.repo !== repo && (a.status === 'running' || a.status === 'spawning'));
+
+              return (
+                <>
+                  {repoAgents.length > 0 && (
+                    <div className="px-2 mb-1">
+                      <span className="text-[8px] font-mono text-zinc-700 uppercase px-1">this repo</span>
+                      {repoAgents.map(a => (
+                        <a key={a.id} href={`/agents/${a.id}`} className="block px-2 py-2 rounded-lg hover:bg-zinc-900 transition-colors mb-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                              a.status === 'running' ? 'bg-emerald-400 animate-pulse'
+                                : a.status === 'done' ? 'bg-emerald-400'
+                                : a.status === 'error' || a.status === 'killed' ? 'bg-red-400'
+                                : a.status === 'spawning' ? 'bg-blue-400 animate-pulse'
+                                : 'bg-zinc-600'
+                            }`} />
+                            <span className="font-mono text-[10px] text-zinc-300 truncate">{a.name}</span>
+                            <span className={`text-[8px] font-mono ml-auto ${
+                              a.status === 'running' ? 'text-emerald-400'
+                                : a.status === 'done' ? 'text-zinc-600'
+                                : a.status === 'error' ? 'text-red-400'
+                                : 'text-zinc-600'
+                            }`}>{a.status}</span>
+                          </div>
+                          <p className="font-mono text-[9px] text-zinc-600 mt-0.5 pl-3.5 line-clamp-2">{a.task}</p>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
+                  {otherAgents.length > 0 && (
+                    <div className="px-2">
+                      <span className="text-[8px] font-mono text-zinc-700 uppercase px-1">other</span>
+                      {otherAgents.map(a => (
+                        <div key={a.id} className="px-2 py-1.5 mb-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+                            <span className="font-mono text-[10px] text-zinc-500 truncate">{a.name}</span>
+                            <span className="text-[8px] font-mono text-zinc-700 ml-auto">{a.type}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {repoAgents.length === 0 && otherAgents.length === 0 && (
+                    <div className="px-3 py-6 text-center">
+                      <Bot className="w-6 h-6 text-zinc-800 mx-auto mb-2" />
+                      <p className="font-mono text-[10px] text-zinc-700">no agents running</p>
+                      <p className="font-mono text-[9px] text-zinc-800 mt-0.5">use the deploy bar above</p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Show agents toggle when panel is hidden */}
+        {!showAgents && (
+          <button
+            onClick={() => setShowAgents(true)}
+            className="flex-shrink-0 w-8 border-l border-zinc-800 flex items-center justify-center hover:bg-zinc-900 transition-colors"
+            title="Show agents panel"
+          >
+            <Bot className="w-3.5 h-3.5 text-zinc-600" />
+          </button>
+        )}
       </div>
     </div>
   );
