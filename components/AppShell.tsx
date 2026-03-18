@@ -80,8 +80,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-screen flex overflow-hidden bg-[#0a0a0a]">
-      {/* Left: persistent orchestrator chat (collapsible) */}
-      {chatOpen ? (
+      {/* Left: persistent orchestrator chat (collapsible) — hidden on workspace (has its own) */}
+      {pathname === '/workspace' ? null : chatOpen ? (
         <div ref={panelRef} className="w-[420px] flex-shrink-0 border-r border-zinc-800 h-full flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 flex-shrink-0">
@@ -126,7 +126,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {/* Chat (bottom) */}
           <ChatBox />
         </div>
-      ) : (
+      ) : pathname === '/workspace' ? null : (
         <button
           onClick={() => setChatOpen(true)}
           className="w-10 flex-shrink-0 border-r border-zinc-800 flex flex-col items-center justify-center gap-2 hover:bg-zinc-900 transition-colors group"
