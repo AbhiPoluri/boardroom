@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,7 @@ interface FileEntry {
   path: string;
   type: 'file' | 'directory';
   size?: number;
+  gitStatus?: string | null;
 }
 
 // Prevent directory traversal
@@ -70,7 +72,20 @@ export async function GET(req: NextRequest) {
     return a.name.localeCompare(b.name);
   });
 
-  return NextResponse.json({ entries, path: filePath, repo });
+  // Annotate entries with git status
+  let gitStatus: Record<string, string> = {};
+  try {
+    const output = execSync(`git -C "${repo}" status --porcelain`, { encoding: 'utf-8' });
+    const statusMap: Record<string, string> = { 'M': 'modified', 'A': 'added', 'D': 'deleted', '??': 'untracked', 'MM': 'modified', 'AM': 'modified', 'AD': 'deleted' };
+    for (const line of output.split('\n').filter(Boolean)) {
+      const status = line.slice(0, 2).trim();
+      const file = line.slice(3);
+      gitStatus[file] = statusMap[status] || 'modified';
+    }
+  } catch {}
+  const annotated = entries.map(e => ({ ...e, gitStatus: gitStatus[e.path] || null }));
+
+  return NextResponse.json({ entries: annotated, path: filePath, repo });
 }
 
 export async function PUT(req: NextRequest) {

@@ -19,6 +19,7 @@ interface FileEntry {
   path: string;
   type: 'file' | 'directory';
   size?: number;
+  gitStatus?: string | null;
 }
 
 interface PushRequest {
@@ -545,6 +546,17 @@ export default function WorkspacePage() {
               <FolderOpen className="w-3.5 h-3.5 text-amber-500/70 flex-shrink-0" />
             ) : null}
             <span className="truncate">{entry.name}</span>
+            {entry.gitStatus && (
+              entry.gitStatus === 'deleted' ? (
+                <span className="ml-1 text-[9px] text-red-400 line-through flex-shrink-0" title="deleted">D</span>
+              ) : entry.gitStatus === 'untracked' ? (
+                <span className="ml-1 text-[9px] text-zinc-500 flex-shrink-0" title="untracked">U</span>
+              ) : entry.gitStatus === 'added' ? (
+                <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" title="added" />
+              ) : (
+                <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="modified" />
+              )
+            )}
             {entry.size !== undefined && entry.type === 'file' && (
               <span className="ml-auto text-[9px] text-zinc-700 flex-shrink-0">
                 {entry.size > 1024 ? `${(entry.size / 1024).toFixed(0)}k` : `${entry.size}b`}
@@ -848,7 +860,7 @@ export default function WorkspacePage() {
                         {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="unsaved" />}
                         <button
                           onClick={(e) => { e.stopPropagation(); closeTab(idx); }}
-                          className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-300 transition-opacity ml-0.5"
+                          className={`flex-shrink-0 text-zinc-600 hover:text-zinc-300 transition-opacity ml-0.5 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                         >
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -925,8 +937,10 @@ export default function WorkspacePage() {
                     <textarea
                       value={editedContent ?? activeFile.content}
                       onChange={(e) => setEditedContent(e.target.value)}
-                      className="flex-1 w-full p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950 resize-none focus:outline-none border-0"
+                      className="flex-1 w-full p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950 resize-none focus:outline-none border-0 h-full"
                       spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="off"
                     />
                   ) : (
                     <pre ref={codeViewerRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
