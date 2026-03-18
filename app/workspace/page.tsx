@@ -942,17 +942,47 @@ export default function WorkspacePage() {
               )}
               {chatMessages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] px-2.5 py-1.5 rounded-lg text-[11px] font-mono leading-relaxed ${
+                  <div className={`max-w-[85%] rounded-lg text-[11px] font-mono leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-zinc-800 text-zinc-200'
-                      : 'bg-zinc-900 text-zinc-400 border border-zinc-800/50'
+                      ? 'bg-zinc-800 text-zinc-200 px-2.5 py-1.5'
+                      : 'space-y-0.5'
                   }`}>
-                    <span className="whitespace-pre-wrap">{msg.content}</span>
+                    {msg.role === 'user' ? (
+                      <span>{msg.content}</span>
+                    ) : (
+                      <>
+                        {msg.content.split('\n').filter(Boolean).map((line, li) => {
+                          const isThinking = line.startsWith('💭');
+                          const isWaiting = line.startsWith('⏳') || line.includes('waiting for');
+                          if (isThinking) {
+                            return (
+                              <div key={li} className="text-[10px] text-zinc-600 pl-1 border-l-2 border-zinc-800 ml-0.5 py-0.5">
+                                {line.replace('💭 ', '')}
+                              </div>
+                            );
+                          }
+                          if (isWaiting) {
+                            return (
+                              <div key={li} className="text-[10px] text-blue-400/60 py-0.5 px-2">
+                                {line}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={li} className="text-zinc-300 px-2.5 py-0.5 bg-zinc-900 rounded border border-zinc-800/50">
+                              {line}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
                     {msg.tools && msg.tools.length > 0 && (
-                      <div className="mt-1.5 space-y-0.5">
+                      <div className="mt-1 space-y-0.5 px-1">
                         {msg.tools.map((t, ti) => (
-                          <div key={ti} className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800/50 text-emerald-400/70">
-                            {t.tool}{t.result ? ` → ${typeof t.result === 'string' ? t.result.slice(0, 80) : ''}` : ''}
+                          <div key={ti} className="flex items-center gap-1.5 text-[9px] px-2 py-1 rounded-md bg-emerald-500/5 border border-emerald-500/10">
+                            <span className="w-1 h-1 rounded-full bg-emerald-400 flex-shrink-0" />
+                            <span className="text-emerald-400/80">{t.tool}</span>
+                            {t.result && <span className="text-zinc-600 truncate">{typeof t.result === 'string' ? t.result.slice(0, 60) : ''}</span>}
                           </div>
                         ))}
                       </div>
