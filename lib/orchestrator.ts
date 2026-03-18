@@ -102,50 +102,102 @@ export async function runClaudeCLI(prompt: string, onChunk?: (text: string) => v
 
     // Escape for single-quote shell embedding
     const escapedPrompt = prompt.replace(/'/g, `'\\''`);
-    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --output-format json '${escapedPrompt}'`;
+    // Use stream-json to get real-time events (thinking, text chunks) as they happen
+    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --output-format stream-json '${escapedPrompt}'`;
 
     // Use PTY so the orchestrator terminal can render live output
     const ptyProc = pty.spawn('/bin/sh', ['-c', cmd], {
       name: 'xterm-256color',
-      cols: 58,
+      cols: 120,
       rows: 20,
       env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>,
     });
 
-    let output = '';
+    let rawOutput = '';
+    let fullText = '';
+    let lastUsage: CLIResult['usage'] = undefined;
+    let lastCost: number | undefined;
+    let lastModel: string | undefined;
 
     ptyProc.onData((data: string) => {
       // Store raw PTY chunks for xterm.js rendering
       insertPtyChunk(ORCHESTRATOR_ID, Buffer.from(data).toString('base64'));
-      // Collect plain text for JSON parsing
+
       const plain = stripAnsi(data);
-      output += plain;
-      // Stream thinking output to caller
-      if (onChunk && plain.trim()) onChunk(plain);
+      rawOutput += plain;
+
+      // Parse stream-json events: each line is a JSON object
+      for (const line of plain.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('{')) continue;
+        try {
+          const event = JSON.parse(trimmed);
+
+          // Content block delta — streaming text
+          if (event.type === 'content_block_delta' && event.delta?.text) {
+            fullText += event.delta.text;
+            if (onChunk) onChunk(event.delta.text);
+          }
+
+          // Content block start with text
+          if (event.type === 'content_block_start' && event.content_block?.text) {
+            fullText += event.content_block.text;
+            if (onChunk) onChunk(event.content_block.text);
+          }
+
+          // Message with result (final)
+          if (event.type === 'result' || event.result) {
+            const text = event.result ?? event.content ?? '';
+            if (text && !fullText) fullText = text;
+          }
+
+          // Usage info
+          if (event.usage) {
+            lastUsage = {
+              input_tokens: event.usage.input_tokens || 0,
+              output_tokens: event.usage.output_tokens || 0,
+              cache_read_tokens: event.usage.cache_read_input_tokens || 0,
+              cache_write_tokens: event.usage.cache_creation_input_tokens || 0,
+            };
+          }
+          if (event.total_cost_usd !== undefined) lastCost = event.total_cost_usd;
+          if (event.modelUsage) lastModel = Object.keys(event.modelUsage)[0];
+          if (event.model) lastModel = event.model;
+        } catch {
+          // Not JSON or partial line — ignore
+        }
+      }
     });
 
     ptyProc.onExit(({ exitCode }) => {
-      if (exitCode !== 0) {
-        safeReject(new Error(`claude CLI exited with code ${exitCode}: ${output.slice(0, 200)}`));
+      if (exitCode !== 0 && !fullText) {
+        safeReject(new Error(`claude CLI exited with code ${exitCode}: ${rawOutput.slice(0, 200)}`));
         return;
       }
-      try {
-        // The output may contain the JSON wrapped in misc text — extract it
-        const jsonMatch = output.match(/(\{[\s\S]*\})/);
-        const jsonStr = jsonMatch ? jsonMatch[1] : output;
-        const parsed = JSON.parse(jsonStr.trim());
-        const text = parsed.result ?? parsed.content ?? output;
-        const usage = parsed.usage ? {
-          input_tokens: parsed.usage.input_tokens || 0,
-          output_tokens: parsed.usage.output_tokens || 0,
-          cache_read_tokens: parsed.usage.cache_read_input_tokens || 0,
-          cache_write_tokens: parsed.usage.cache_creation_input_tokens || 0,
-        } : undefined;
-        const model = parsed.modelUsage ? Object.keys(parsed.modelUsage)[0] : undefined;
-        safeResolve({ text, usage, cost_usd: parsed.total_cost_usd, model });
-      } catch {
-        safeResolve({ text: output });
+
+      // If we didn't get streaming text, try to parse the raw output as JSON
+      if (!fullText) {
+        try {
+          const jsonMatch = rawOutput.match(/(\{[\s\S]*\})/);
+          const jsonStr = jsonMatch ? jsonMatch[1] : rawOutput;
+          const parsed = JSON.parse(jsonStr.trim());
+          fullText = parsed.result ?? parsed.content ?? rawOutput;
+          if (parsed.usage) {
+            lastUsage = {
+              input_tokens: parsed.usage.input_tokens || 0,
+              output_tokens: parsed.usage.output_tokens || 0,
+              cache_read_tokens: parsed.usage.cache_read_input_tokens || 0,
+              cache_write_tokens: parsed.usage.cache_creation_input_tokens || 0,
+            };
+          }
+          if (parsed.total_cost_usd !== undefined) lastCost = parsed.total_cost_usd;
+          if (parsed.modelUsage) lastModel = Object.keys(parsed.modelUsage)[0];
+        } catch {
+          fullText = rawOutput;
+        }
       }
+
+      safeResolve({ text: fullText, usage: lastUsage, cost_usd: lastCost, model: lastModel });
     });
 
     // 3 minute timeout
@@ -337,31 +389,31 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
   let parsed: OrchestratorResponse;
 
   // Stream live thinking output as the CLI runs
-  // Use a shared queue so we can yield thinking events while awaiting the CLI
-  const thinkingQueue: string[] = [];
+  const thinkingBuffer: string[] = [];
   let cliDone = false;
   let cliResult: CLIResult | null = null;
   let cliError: Error | null = null;
+  let streamedText = '';
 
   const cliPromise = runClaudeCLI(fullPrompt, (chunk) => {
-    thinkingQueue.push(chunk);
+    thinkingBuffer.push(chunk);
   }).then(result => { cliResult = result; cliDone = true; })
     .catch(err => { cliError = err instanceof Error ? err : new Error(String(err)); cliDone = true; });
 
-  // Drain thinking queue while CLI runs
+  // Yield text as it streams in, every 500ms
   while (!cliDone) {
-    await new Promise(r => setTimeout(r, 300));
-    while (thinkingQueue.length > 0) {
-      const chunk = thinkingQueue.shift()!;
-      // Filter out JSON and noise — only show readable text
-      const trimmed = chunk.trim();
-      if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('"') && trimmed.length > 3) {
-        yield { type: 'text' as const, content: `\n💭 ${trimmed}` };
-      }
+    await new Promise(r => setTimeout(r, 500));
+    if (thinkingBuffer.length > 0) {
+      const newText = thinkingBuffer.splice(0).join('');
+      streamedText += newText;
+      // Yield as thinking event — the final parsed JSON response replaces this
+      yield { type: 'text' as const, content: `\n💭 ${newText}` };
     }
   }
-  // Drain any remaining
-  while (thinkingQueue.length > 0) thinkingQueue.shift();
+  // Flush remaining buffer
+  if (thinkingBuffer.length > 0) {
+    streamedText += thinkingBuffer.splice(0).join('');
+  }
 
   if (cliError) throw cliError;
   if (!cliResult) throw new Error('CLI returned no result');
