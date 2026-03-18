@@ -698,10 +698,15 @@ export default function WorkflowsPage() {
                 {runHistory.slice(0, 10).map((run) => {
                   const duration = run.finished_at ? run.finished_at - run.started_at : Date.now() - run.started_at;
                   const durationStr = duration < 60000 ? `${Math.round(duration / 1000)}s` : `${Math.round(duration / 60000)}m`;
+                  const matchingWf = workflows.find(wf => wf.name === run.workflow_id || wf.id === run.workflow_id);
                   return (
-                    <div
+                    <button
                       key={run.id}
-                      className="w-full text-left px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-900 hover:text-zinc-400 transition-all"
+                      onClick={() => { if (matchingWf) selectWorkflow(matchingWf); }}
+                      disabled={!matchingWf}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-zinc-500 transition-all ${
+                        matchingWf ? 'hover:bg-zinc-900 hover:text-zinc-400 cursor-pointer' : 'cursor-default opacity-60'
+                      }`}
                     >
                       <div className="flex items-center gap-2">
                         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
@@ -722,9 +727,11 @@ export default function WorkflowsPage() {
                         </span>
                       </div>
                       {run.error && (
-                        <div className="text-[9px] font-mono text-red-400/70 mt-1 pl-3.5 truncate">{run.error}</div>
+                        <div className={`text-[9px] font-mono mt-1 pl-3.5 ${run.status === 'error' ? 'text-red-400 font-medium' : 'text-red-400/70'} truncate`}>
+                          {run.error}
+                        </div>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </>

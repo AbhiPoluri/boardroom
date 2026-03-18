@@ -57,11 +57,13 @@ const TUI_CHROME_PATTERNS = [
   /dangerously-skip-permissions/,                             // CLI flag echoed back
   /^[A-Z][a-z]+ing[.…]+\s*(thinking|working)/i,              // "Wibbling... thinking..." spinner
   /^[A-Z][a-z]+(…|\.{2,})\s*\(thinking\)/i,                  // "Discombobulating… (thinking)" spinner
+  /^[✻✶✳⎿*\s]*thinking[.…]*$/i,                              // "thinking", "* thinking", "✻ thinking..."
+  /^thinking[.…]*$/i,                                         // bare "thinking" or "Thinking..."
 ];
 
 export function isTuiChrome(line: string): boolean {
   const trimmed = line.trim();
-  if (!trimmed || trimmed.length < 3) return true;
+  if (!trimmed || trimmed.length < 4) return true;
   for (const pattern of TUI_CHROME_PATTERNS) {
     if (pattern.test(trimmed)) {
       // spinner/status pattern only filters short lines (actual content can start with these chars)
