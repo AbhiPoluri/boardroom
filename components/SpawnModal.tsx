@@ -211,7 +211,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
   return (
     <Dialog open={open} onOpenChange={() => { resetForm(); onClose(); }}>
-      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-4xl w-[90vw] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-mono text-sm text-zinc-100 flex items-center gap-2">
             {(['spawn', 'personas', 'import', 'redo'] as const).map((t, i) => {
@@ -334,7 +334,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 placeholder="describe what the agent should do..."
-                className="font-mono text-sm bg-zinc-950 border-zinc-700 text-zinc-100 placeholder:text-zinc-600 resize-none h-24 focus:border-emerald-800 focus:ring-emerald-800/20"
+                className="font-mono text-sm bg-zinc-950 border-zinc-700 text-zinc-100 placeholder:text-zinc-600 resize-none h-16 focus:border-emerald-800 focus:ring-emerald-800/20"
                 required
               />
             </div>
@@ -422,7 +422,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
             {existingAgents.length > 0 && (
               <div className="space-y-1.5">
                 <Label className="font-mono text-xs text-zinc-400">Depends On <span className="text-zinc-700">(optional)</span></Label>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5 max-h-[60px] overflow-y-auto">
                   {existingAgents
                     .filter(a => {
                       const isRunning = a.status === 'running' || a.status === 'spawning';
