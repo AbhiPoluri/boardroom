@@ -17,7 +17,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { from, channel, content, to } = await req.json();
+  let parsed: { from: string; channel: string; content: unknown; to?: string };
+  try {
+    parsed = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const { from, channel, content, to } = parsed;
   if (!from || !channel || !content) {
     return NextResponse.json({ error: 'from, channel, and content required' }, { status: 400 });
   }

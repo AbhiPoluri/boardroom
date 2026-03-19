@@ -62,7 +62,7 @@ async function executeCronJob(job: {
       model: job.model || 'sonnet',
     });
 
-    console.log(`[cron] Started job "${job.name}" → agent ${agentId.slice(0, 8)}`);
+    console.error(`[cron] Started job "${job.name}" → agent ${agentId.slice(0, 8)}`);
   } catch (err) {
     console.error(`[cron] Failed to run job "${job.name}":`, err);
     recordCronRun(job.id, agentId, 'error');
@@ -100,7 +100,7 @@ function tick() {
           try { steps = JSON.parse(wf.steps_json); } catch { continue; }
           if (steps.length === 0) continue;
 
-          console.log(`[cron] Triggering scheduled workflow "${wf.name}"`);
+          console.error(`[cron] Triggering scheduled workflow "${wf.name}"`);
           runWorkflow(wf.name, steps).catch((err) => {
             console.error(`[cron] Failed to run scheduled workflow "${wf.name}":`, err);
           });
@@ -118,7 +118,7 @@ export function startCronScheduler() {
   if (started) return;
   started = true;
 
-  console.log('[cron] Scheduler started — checking every 30s');
+  console.error('[cron] Scheduler started — checking every 30s');
 
   // Check immediately on start
   tick();

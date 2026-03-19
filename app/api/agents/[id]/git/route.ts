@@ -29,7 +29,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
   if (!agent.repo) return NextResponse.json({ error: 'Agent has no repo' }, { status: 400 });
 
-  const body = await req.json();
+  let body: { action: 'merge' | 'cherry-pick' | 'patch'; baseBranch?: string; commits?: string[] };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
   const { action, baseBranch = 'main', commits } = body as {
     action: 'merge' | 'cherry-pick' | 'patch';
     baseBranch?: string;

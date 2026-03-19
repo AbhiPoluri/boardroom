@@ -637,7 +637,8 @@ export function searchLogs(query: string, limit = 100) {
   const db = getDb();
   const safeLimit = Math.max(1, Math.min(500, limit || 100));
   const safeQuery = query.slice(0, 200);
-  return db.prepare(`SELECT l.*, a.name as agent_name FROM logs l JOIN agents a ON l.agent_id = a.id WHERE l.content LIKE ? ORDER BY l.timestamp DESC LIMIT ?`).all(`%${safeQuery}%`, safeLimit);
+  const escapedQuery = safeQuery.replace(/%/g, '\\%').replace(/_/g, '\\_');
+  return db.prepare(`SELECT l.*, a.name as agent_name FROM logs l JOIN agents a ON l.agent_id = a.id WHERE l.content LIKE ? ESCAPE '\\' ORDER BY l.timestamp DESC LIMIT ?`).all(`%${escapedQuery}%`, safeLimit);
 }
 
 // Token usage by model

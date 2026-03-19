@@ -226,6 +226,8 @@ export function mergeWorktreeBranch(
   baseBranch = 'main'
 ): { success: boolean; message: string } {
   try {
+    if (!/^[\w\-\/\.]+$/.test(baseBranch)) throw new Error('Invalid branch name');
+    if (!/^[\w\-\/\.]+$/.test(agentBranch)) throw new Error('Invalid branch name');
     // Ensure we're on the base branch in the main repo
     git(repo, `checkout ${baseBranch}`);
     git(repo, `merge ${agentBranch} --no-ff -m "Merge ${agentBranch} into ${baseBranch}"`);
@@ -245,8 +247,10 @@ export function cherryPickCommits(
   baseBranch = 'main'
 ): { success: boolean; message: string } {
   try {
+    if (!/^[\w\-\/\.]+$/.test(baseBranch)) throw new Error('Invalid branch name');
     git(repo, `checkout ${baseBranch}`);
     for (const hash of commits) {
+      if (!/^[0-9a-f]{7,40}$/i.test(hash)) throw new Error('Invalid commit hash');
       git(repo, `cherry-pick ${hash}`);
     }
     return { success: true, message: `Cherry-picked ${commits.length} commit(s) onto ${baseBranch}` };

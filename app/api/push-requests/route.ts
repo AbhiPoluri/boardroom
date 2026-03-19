@@ -36,8 +36,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { agent_id, summary } = body as { agent_id: string; summary?: string };
+  let body: { agent_id: string; summary?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const { agent_id, summary } = body;
 
   if (!agent_id) {
     return Response.json({ error: 'agent_id required' }, { status: 400 });
@@ -71,8 +76,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const body = await req.json();
-  const { id, action, comment } = body as { id: string; action: 'approve' | 'reject'; comment?: string };
+  let body: { id: string; action: 'approve' | 'reject'; comment?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const { id, action, comment } = body;
 
   if (!id || !action) {
     return Response.json({ error: 'id and action required' }, { status: 400 });

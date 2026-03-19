@@ -281,6 +281,14 @@ export default function WorkspacePage() {
     window.addEventListener('mouseup', onUp);
   };
 
+  // Cleanup timer refs on unmount to prevent leaks
+  useEffect(() => {
+    return () => {
+      if (chatTimerRef.current) clearInterval(chatTimerRef.current);
+      if (agentLogsPollRef.current) clearInterval(agentLogsPollRef.current);
+    };
+  }, []);
+
   // Load recent repos + last open repo from localStorage
   useEffect(() => {
     try {
@@ -874,7 +882,7 @@ export default function WorkspacePage() {
                       <GitBranch className="w-2.5 h-2.5 mr-1" /> open this repo
                     </Button>
                   )}
-                  <button onClick={() => setBrowsing(false)} className="text-zinc-600 hover:text-zinc-400">
+                  <button onClick={() => setBrowsing(false)} className="text-zinc-600 hover:text-zinc-400" aria-label="Close browser">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1073,7 +1081,7 @@ export default function WorkspacePage() {
               <button onClick={() => fetchDir('')} className="text-zinc-700 hover:text-zinc-400">
                 <RefreshCw className="w-3 h-3" />
               </button>
-              <button onClick={() => setShowFileTree(false)} className="text-zinc-700 hover:text-zinc-400 md:hidden" title="Collapse file tree">
+              <button onClick={() => setShowFileTree(false)} className="text-zinc-700 hover:text-zinc-400 md:hidden" title="Collapse file tree" aria-label="Collapse file tree">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -1259,6 +1267,7 @@ export default function WorkspacePage() {
                         <button
                           onClick={(e) => { e.stopPropagation(); closeTab(idx); }}
                           className={`flex-shrink-0 text-zinc-600 hover:text-zinc-300 transition-opacity ml-0.5 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                          aria-label="Close tab"
                         >
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -1508,7 +1517,7 @@ export default function WorkspacePage() {
                   {agents.filter(a => a.status === 'running' || a.status === 'spawning').length} active
                 </Badge>
               </div>
-              <button onClick={() => setShowAgents(false)} className="text-zinc-700 hover:text-zinc-400">
+              <button onClick={() => setShowAgents(false)} className="text-zinc-700 hover:text-zinc-400" aria-label="Close agents panel">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -1551,6 +1560,7 @@ export default function WorkspacePage() {
                                 onClick={async (e) => { e.preventDefault(); await fetch(`/api/agents/${a.id}`, { method: 'DELETE' }); fetchAgents(); }}
                                 className="flex-shrink-0 text-red-400/70 hover:text-red-400 px-0.5 py-0.5 rounded border border-red-500/20 hover:border-red-500/40 transition-colors"
                                 title="kill agent"
+                                aria-label="Kill agent"
                               >
                                 <X className="w-2.5 h-2.5" />
                               </button>
@@ -1644,7 +1654,7 @@ export default function WorkspacePage() {
               >
                 clear
               </button>
-              <button onClick={() => setChatOpen(false)} className="text-zinc-700 hover:text-zinc-400">
+              <button onClick={() => setChatOpen(false)} className="text-zinc-700 hover:text-zinc-400" aria-label="Close chat">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -1760,6 +1770,7 @@ export default function WorkspacePage() {
           <button
             onClick={() => setToast(null)}
             className="ml-2 opacity-50 hover:opacity-100"
+            aria-label="Dismiss notification"
           >
             <X className="w-3 h-3" />
           </button>

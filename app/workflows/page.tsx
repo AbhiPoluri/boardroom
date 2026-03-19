@@ -527,7 +527,7 @@ export default function WorkflowsPage() {
                   <Button onClick={handleDuplicate} variant="ghost" size="sm" className="h-7 w-7 p-0 text-zinc-600 hover:text-zinc-300" title="Duplicate workflow">
                     <Copy className="w-3.5 h-3.5" />
                   </Button>
-                  <Button onClick={handleDelete} variant="ghost" size="sm" className="h-7 w-7 p-0 text-zinc-600 hover:text-red-400">
+                  <Button onClick={handleDelete} variant="ghost" size="sm" className="h-7 w-7 p-0 text-zinc-600 hover:text-red-400" aria-label="Delete workflow">
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </>

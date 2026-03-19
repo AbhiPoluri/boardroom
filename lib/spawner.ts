@@ -291,10 +291,10 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       shellCmd = `echo "boardroom agent started"; echo "task: ${escapedTask}"; sleep 1; echo "done"`;
       break;
     case 'custom':
-      shellCmd = `${nvmInit} && ${task}`;
+      shellCmd = `${nvmInit} && ${escapedTask}`;
       break;
     default:
-      shellCmd = `${nvmInit} && ${task}`;
+      shellCmd = `${nvmInit} && ${escapedTask}`;
   }
 
   const child = spawn('/bin/sh', ['-c', shellCmd], {

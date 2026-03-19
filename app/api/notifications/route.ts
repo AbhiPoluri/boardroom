@@ -11,7 +11,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { action, id } = await req.json();
+  let parsed: { action: string; id?: number };
+  try {
+    parsed = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const { action, id } = parsed;
   if (action === 'read' && id) {
     markNotificationRead(id);
   } else if (action === 'read_all') {
