@@ -633,7 +633,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
   }, [steps]);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col relative">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="flex items-center gap-1">
@@ -1112,10 +1112,10 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
         )}
       </div>
 
-      {/* Selected node detail panel */}
+      {/* Selected node detail panel — right sidebar */}
       {selectedStep && selectedIdx !== null && (
-        <div className="mt-3 border border-zinc-800 rounded-xl bg-zinc-900/80 p-4 font-mono">
-          <div className="flex items-center justify-between mb-3">
+        <div className="absolute right-0 top-0 w-[280px] h-full border-l border-zinc-800 bg-zinc-900/95 backdrop-blur-sm p-3 font-mono overflow-y-auto z-[60]">
+          <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">edit node</span>
             <div className="flex items-center gap-2">
               <button
@@ -1140,7 +1140,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="space-y-2 mb-2">
             {/* Name */}
             <div>
               <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">name</label>
