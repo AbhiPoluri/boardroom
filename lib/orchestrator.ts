@@ -112,7 +112,7 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
       name: 'xterm-256color',
       cols: 120,
       rows: 20,
-      env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>,
+      env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor', CLAUDE_CODE_ENTRYPOINT: '', CLAUDECODE: '' } as Record<string, string>,
     });
 
     let output = '';

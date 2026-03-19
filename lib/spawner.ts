@@ -116,7 +116,7 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       cols: 120,
       rows: 40,
       cwd: worktreePath,
-      env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>,
+      env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor', CLAUDE_CODE_ENTRYPOINT: '', CLAUDECODE: '' } as Record<string, string>,
     });
 
     processes.set(agentId, ptyProc as unknown as ChildProcess);
@@ -299,7 +299,7 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
 
   const child = spawn('/bin/sh', ['-c', shellCmd], {
     cwd: worktreePath,
-    env: { ...process.env, HOME: home },
+    env: { ...process.env, HOME: home, CLAUDE_CODE_ENTRYPOINT: '', CLAUDECODE: '' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
