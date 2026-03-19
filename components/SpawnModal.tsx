@@ -283,7 +283,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                 })}
               </div>
             )}
-            <DialogFooter className="gap-2 pt-2">
+            <DialogFooter className="gap-2 pt-2 flex-wrap">
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800">
                 cancel
               </Button>
@@ -461,7 +461,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
             {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 flex-wrap">
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" disabled={loading}>
                 cancel
               </Button>
@@ -577,7 +577,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
             {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 flex-wrap">
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" disabled={loading}>
                 cancel
               </Button>
