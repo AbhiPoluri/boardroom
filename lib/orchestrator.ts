@@ -165,12 +165,52 @@ interface OrchestratorResponse {
   actions: OrchestratorAction[];
 }
 
+/** Resolve a repo path — tries the exact path first, then common locations */
+function resolveRepoPath(repoPath: string): string | null {
+  const fs = require('fs');
+  const path = require('path');
+  const home = os.homedir();
+
+  // Try exact path first
+  if (fs.existsSync(repoPath) && fs.existsSync(path.join(repoPath, '.git'))) return repoPath;
+
+  // Extract the repo name from the path (last segment)
+  const repoName = path.basename(repoPath);
+
+  // Try common locations
+  const candidates = [
+    path.join(home, repoName),
+    path.join(home, 'repos', repoName),
+    path.join(home, 'projects', repoName),
+    path.join(home, 'code', repoName),
+    path.join(home, 'dev', repoName),
+    path.join(home, 'Documents', repoName),
+    path.join(home, 'Desktop', repoName),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
 async function executeAction(action: OrchestratorAction): Promise<unknown> {
   switch (action.tool) {
     case 'spawn_agent': {
-      const { task, type, name: agentName, repo, model } = action.input as {
+      const { task, type, name: agentName, model } = action.input as {
         task: string; type: AgentType; name: string; repo?: string; model?: string;
       };
+      let repo = (action.input as { repo?: string }).repo;
+
+      // Validate and resolve repo path
+      if (repo) {
+        repo = resolveRepoPath(repo);
+        if (!repo) {
+          return { error: `Repo not found. Tried the path and common locations (~/, ~/repos/, ~/projects/, ~/code/). Make sure the repo exists and provide the full absolute path.` };
+        }
+      }
+
       const id = uuidv4();
       const now = Date.now();
       // Create agent record first (spawner expects it to exist in DB)
@@ -262,12 +302,17 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
       return { runId: result.runId, agents: result.agents.length, message: `Workflow "${name}" started (run ${result.runId})` };
     }
     case 'swarm_agents': {
-      const { task, agents: agentDefs, repo, model } = action.input as {
+      const { task, agents: agentDefs, model } = action.input as {
         task: string;
         agents: Array<{ name: string; subtask: string }>;
         repo?: string;
         model?: string;
       };
+      let repo = (action.input as { repo?: string }).repo;
+      if (repo) {
+        repo = resolveRepoPath(repo);
+        if (!repo) return { error: 'Repo not found. Provide the full absolute path.' };
+      }
       const ids: Array<{ name: string; id: string }> = [];
       for (const def of agentDefs) {
         const id = uuidv4();
