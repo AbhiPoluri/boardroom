@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Zap, TrendingUp, Lightbulb } from 'lucide-react';
+import { Zap, TrendingUp, Lightbulb, DollarSign } from 'lucide-react';
 import { CostChart } from '@/components/CostChart';
 
 interface TokenEntry {
@@ -159,6 +159,7 @@ export default function CostsPage() {
           <div className="text-xs font-mono text-zinc-600 animate-pulse text-center">loading cost data...</div>
         ) : session.total_tokens === 0 && perAgent.length === 0 && !error ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
+            <DollarSign className="w-10 h-10 text-zinc-800 mb-4" />
             <h3 className="font-mono text-sm text-zinc-500 mb-1">no cost data yet</h3>
             <p className="font-mono text-xs text-zinc-700">costs appear when agents run</p>
           </div>

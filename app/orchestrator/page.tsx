@@ -287,6 +287,12 @@ export default function OrchestratorPage() {
                 <Terminal className="w-10 h-10 text-zinc-800 mb-4" />
                 <p className="font-mono text-sm text-zinc-600">no orchestrator activity yet</p>
                 <p className="font-mono text-xs text-zinc-700 mt-1">send a message in the chat panel to get started</p>
+                <button
+                  onClick={() => setViewMode('terminal')}
+                  className="mt-4 px-3 py-1.5 rounded-lg text-xs font-mono bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                >
+                  open terminal
+                </button>
               </div>
             ) : (
               <div>

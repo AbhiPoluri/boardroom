@@ -19,7 +19,7 @@ interface AgentConfig {
 
 const AGENT_TYPES: AgentType[] = ['claude', 'codex', 'opencode', 'custom', 'test'];
 
-// --- Agent Templates ---
+// --- Persona Templates ---
 interface AgentTemplate {
   name: string;
   desc: string;
@@ -463,7 +463,7 @@ export default function ConfigsPage() {
   };
 
   const handleDelete = async (slug: string) => {
-    if (!confirm('Delete this agent config? This cannot be undone.')) return;
+    if (!confirm('Delete this persona? This cannot be undone.')) return;
     try {
       await fetch('/api/agent-configs', {
         method: 'DELETE',
@@ -517,7 +517,7 @@ export default function ConfigsPage() {
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
           <h1 className="font-mono text-sm text-zinc-100">personas</h1>
-          <span className="text-[10px] font-mono text-zinc-600">personas</span>
+          <span className="text-[10px] font-mono text-zinc-600">agents/*.md</span>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -547,7 +547,7 @@ export default function ConfigsPage() {
           ) : configs.length === 0 ? (
             <>
               <div className="p-4 text-xs font-mono text-zinc-700">
-                no configs found<br />
+                no personas found<br />
                 <span className="text-zinc-600">create one with + new persona</span>
               </div>
               {drafts.length > 0 && (

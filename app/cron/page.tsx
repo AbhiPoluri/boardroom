@@ -386,19 +386,17 @@ export default function CronPage() {
         ) : jobs.length === 0 && !showForm ? (
           /* Empty state */
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center mb-6 border border-zinc-800">
-              <Calendar className="w-8 h-8 text-zinc-600" />
-            </div>
-            <h2 className="text-lg font-mono text-zinc-300 mb-2">no cron jobs yet</h2>
-            <p className="text-sm font-mono text-zinc-500 max-w-md mb-6 leading-relaxed">
-              Schedule agents to run automatically on a recurring basis — daily reports, periodic code reviews, automated deployments, or anything else you want on a schedule.
+            <Calendar className="w-10 h-10 text-zinc-800 mb-4" />
+            <h3 className="font-mono text-sm text-zinc-500 mb-1">no cron jobs yet</h3>
+            <p className="font-mono text-xs text-zinc-700 max-w-md mb-4 leading-relaxed">
+              schedule agents to run on a recurring basis — daily reports, code reviews, automated deployments.
             </p>
             <Button
               onClick={openNew}
-              className="font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-8 px-4"
+              className="font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-7 px-3"
             >
               <Plus className="w-3.5 h-3.5 mr-1" />
-              create first job
+              new job
             </Button>
           </div>
         ) : (
@@ -406,7 +404,7 @@ export default function CronPage() {
             {/* Job list */}
             {/* Drafts section */}
             {drafts.length > 0 && (
-              <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 overflow-hidden">
+              <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 overflow-hidden">
                 <button
                   onClick={() => setDraftsOpen(o => !o)}
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-amber-950/30 transition-colors"
@@ -478,7 +476,7 @@ export default function CronPage() {
             {jobs.map((job) => (
               <div
                 key={job.id}
-                className={`rounded-xl border bg-zinc-900/50 p-4 transition-opacity ${
+                className={`rounded-lg border bg-zinc-900/50 p-4 transition-opacity ${
                   job.enabled ? 'border-zinc-800 opacity-100' : 'border-zinc-800/50 opacity-60'
                 }`}
               >

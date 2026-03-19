@@ -427,19 +427,19 @@ const API_GROUPS: EndpointGroup[] = [
       {
         method: 'GET',
         path: '/api/agent-configs',
-        description: 'List all saved agent configurations',
+        description: 'List all saved personas',
         response: '{ configs: [{ slug, name, type, model, description, prompt }] }',
       },
       {
         method: 'POST',
         path: '/api/agent-configs',
-        description: 'Create or update an agent configuration',
+        description: 'Create or update a persona',
         body: {
-          name: { type: 'string', required: true, description: 'Config name' },
+          name: { type: 'string', required: true, description: 'Persona name' },
           prompt: { type: 'string', required: true, description: 'Default task/prompt' },
           type: { type: 'string', description: 'Agent type (default: claude)' },
           model: { type: 'string', description: 'Model override' },
-          description: { type: 'string', description: 'What this agent does' },
+          description: { type: 'string', description: 'What this persona does' },
         },
         example: { name: 'code-reviewer', prompt: 'Review the PR for quality issues', type: 'claude', model: 'sonnet', description: 'Reviews PRs for bugs and style' },
         response: '{ config: { slug, name, type, model, description, prompt } }',
@@ -447,7 +447,7 @@ const API_GROUPS: EndpointGroup[] = [
       {
         method: 'DELETE',
         path: '/api/agent-configs',
-        description: 'Delete an agent configuration',
+        description: 'Delete a persona',
         body: { slug: { type: 'string', required: true, description: 'Config slug to delete' } },
         response: '{ ok: true }',
       },

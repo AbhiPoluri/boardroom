@@ -275,7 +275,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleDeleteConfig(config.slug); }}
                         className="flex-shrink-0 mt-1 p-1 rounded text-zinc-700 hover:text-red-400 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Delete config"
+                        title="Delete persona"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -410,7 +410,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
             </div>
 
             <div className="space-y-1.5">
-              <Label className="font-mono text-xs text-zinc-400">Description <span className="text-zinc-700">(for saving as agent)</span></Label>
+              <Label className="font-mono text-xs text-zinc-400">Description <span className="text-zinc-700">(for saving as persona)</span></Label>
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -547,7 +547,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                       onClick={() => setImportType(t)}
                       className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors ${
                         importType === t
-                          ? 'bg-purple-950 border-purple-700 text-purple-400'
+                          ? 'bg-emerald-950 border-emerald-700 text-emerald-400'
                           : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                       }`}
                     >
@@ -582,7 +582,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" disabled={loading}>
                 cancel
               </Button>
-              <Button type="submit" disabled={loading || !importPath.trim()} className="font-mono bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50">
+              <Button type="submit" disabled={loading || !importPath.trim()} className="font-mono bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
                 {loading ? 'importing...' : importTask.trim() ? 'import + run' : 'import'}
               </Button>
             </DialogFooter>

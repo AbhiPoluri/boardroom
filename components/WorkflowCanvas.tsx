@@ -1202,7 +1202,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
             </div>
           </div>
 
-          {/* Agent Config */}
+          {/* Persona */}
           {agentConfigs && agentConfigs.length > 0 && (
             <div className="mb-3">
               <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">persona</label>
