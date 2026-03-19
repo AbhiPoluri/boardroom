@@ -50,7 +50,7 @@ export function ensureWorktreesDir(): void {
   }
 }
 
-export async function createWorktree(agentId: string, repo?: string): Promise<WorktreeResult> {
+export async function createWorktree(agentId: string, repo?: string, agentName?: string): Promise<WorktreeResult> {
   ensureWorktreesDir();
 
   const worktreePath = path.join(WORKTREES_DIR, agentId);
@@ -68,8 +68,12 @@ export async function createWorktree(agentId: string, repo?: string): Promise<Wo
   }
 
   try {
+    // Branch name: boardroom/agent-name-shortid (readable + unique)
+    const safeName = (agentName || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
+    const shortId = agentId.slice(0, 8);
+    const branchName = `boardroom/${safeName}-${shortId}`;
     execSync(
-      `git -C "${repo}" worktree add "${worktreePath}" -b "boardroom/${agentId}"`,
+      `git -C "${repo}" worktree add "${worktreePath}" -b "${branchName}"`,
       { stdio: 'pipe' }
     );
     return { path: worktreePath, created: true };

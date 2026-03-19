@@ -61,11 +61,14 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     insertLog(agentId, 'system', `Working directly in repo (no git isolation): ${worktreePath}`);
   } else {
     // Create an isolated git worktree (or a plain temp dir if no repo)
-    const worktreeResult = await createWorktree(agentId, useGitIsolation ? repo : undefined);
+    const worktreeResult = await createWorktree(agentId, useGitIsolation ? repo : undefined, name);
     if (worktreeResult.error) insertLog(agentId, 'system', `Worktree warning: ${worktreeResult.error}`);
     worktreePath = worktreeResult.path;
     updateAgent(agentId, { worktree_path: worktreePath });
-    if (repo && useGitIsolation) insertLog(agentId, 'system', `Git isolation ON — branch: boardroom/${agentId}`);
+    if (repo && useGitIsolation) {
+      const safeName = (name || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
+      insertLog(agentId, 'system', `Git isolation ON — branch: boardroom/${safeName}-${agentId.slice(0, 8)}`);
+    }
   }
 
   insertLog(agentId, 'system', `Working directory: ${worktreePath}`);
@@ -250,7 +253,8 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       if (useGitIsolation && repo && finalStatus === 'done' && worktreePath !== repo) {
         try {
           const { execSync } = require('child_process');
-          const branch = `boardroom/${agentId}`;
+          const safeName = (name || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
+          const branch = `boardroom/${safeName}-${agentId.slice(0, 8)}`;
           const baseBranch = execSync(`git -C "${repo}" symbolic-ref --short HEAD`, { encoding: 'utf-8' }).trim();
           // Check if agent made any commits on its branch
           const commits = execSync(`git -C "${repo}" log ${baseBranch}..${branch} --oneline 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
