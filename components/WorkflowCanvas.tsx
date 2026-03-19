@@ -1180,7 +1180,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
           {/* Type selector */}
           <div className="mb-3">
             <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">type</label>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1">
               {(['claude', 'codex', 'opencode', 'custom', 'test'] as AgentType[]).map(t => {
                 const c = TYPE_COLORS[t];
                 const isActive = selectedStep.type === t;
