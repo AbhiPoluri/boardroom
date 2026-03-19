@@ -41,7 +41,7 @@ interface SpawnModalProps {
   existingAgents?: Array<{ id: string; name: string; status: string; created_at: number; task?: string; type?: string; repo?: string | null }>;
 }
 
-type ModalTab = 'spawn' | 'configs' | 'import' | 'tasks';
+type ModalTab = 'spawn' | 'configs' | 'import' | 'tasks' | 'saved';
 
 const SLUG_ICONS: Record<string, typeof Bot> = {
   'code-reviewer': Bug,
@@ -214,7 +214,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
       <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-mono text-sm text-zinc-100 flex items-center gap-2">
-            {(['spawn', 'personas', 'import', 'redo'] as const).map((t, i) => {
+            {(['spawn', 'personas', 'import', 'saved', 'redo'] as const).map((t, i) => {
               const tabKey = t === 'personas' ? 'configs' : t === 'redo' ? 'tasks' : t;
               return (
                 <span key={t} className="flex items-center gap-2">
@@ -586,108 +586,97 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               </Button>
             </DialogFooter>
           </form>
-        ) : tab === 'tasks' ? (
-
-          /* ── REDO TASKS ── */
+        ) : tab === 'saved' ? (
+          /* ── SAVED TASKS ── */
           <div className="space-y-2">
             <p className="text-[10px] font-mono text-zinc-600 mb-2">
-              Re-run a previous agent task. Click to load it into the spawn form.
+              Saved task configurations. Click to load into the spawn form.
             </p>
-            <div className="max-h-[360px] overflow-y-auto space-y-3">
-              {/* SAVED section */}
-              {savedTasks.length > 0 && (
-                <div>
-                  <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest px-1 mb-1">Saved</p>
-                  <div className="space-y-1">
-                    {savedTasks.map(st => (
-                      <div
-                        key={st.id}
-                        className="w-full flex items-start gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900 transition-all group"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTask(st.task);
-                            setType(st.type);
-                            setModel(st.model);
-                            setRepo(st.repo);
-                            setName(st.name);
-                            setTab('spawn');
-                          }}
-                          className="flex-1 text-left min-w-0"
-                        >
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-xs text-zinc-200 truncate">{st.name}</span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{st.type}</span>
-                            {st.model && (
-                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-blue-400/70">{st.model}</span>
-                            )}
-                            {st.repo && (
-                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-600 truncate max-w-[100px]">{st.repo}</span>
-                            )}
-                          </div>
-                          <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
-                            {st.task.slice(0, 80)}
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteSavedTask(st.id)}
-                          className="flex-shrink-0 mt-0.5 p-1 rounded text-zinc-700 hover:text-red-400 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-all"
-                          title="Remove saved task"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+            {savedTasks.length === 0 ? (
+              <p className="text-sm font-mono text-zinc-700 text-center py-8">no saved tasks yet — use &quot;save task&quot; in the spawn tab</p>
+            ) : (
+              <div className="space-y-1">
+                {savedTasks.map(st => (
+                  <div
+                    key={st.id}
+                    className="w-full flex items-start gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900 transition-all group"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTask(st.task);
+                        setType(st.type);
+                        setModel(st.model);
+                        setRepo(st.repo);
+                        setName(st.name);
+                        setTab('spawn');
+                      }}
+                      className="flex-1 text-left min-w-0"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs text-zinc-200 truncate">{st.name}</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{st.type}</span>
+                        {st.model && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-blue-400/70">{st.model}</span>}
+                        {st.repo && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-600 truncate max-w-[200px]">{st.repo}</span>}
                       </div>
-                    ))}
+                      <div className="font-mono text-[10px] text-zinc-600 mt-0.5">{st.task.slice(0, 120)}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteSavedTask(st.id)}
+                      className="flex-shrink-0 mt-0.5 p-1 rounded text-zinc-700 hover:text-red-400 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-all"
+                      title="Remove saved task"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
-                </div>
-              )}
-
-              {/* RECENT section */}
-              {existingAgents.filter(a => a.status === 'done' || a.status === 'error').length > 0 && (
-                <div>
-                  <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest px-1 mb-1">Recent</p>
-                  <div className="space-y-1">
-                    {existingAgents
-                      .filter(a => a.status === 'done' || a.status === 'error')
-                      .sort((a, b) => b.created_at - a.created_at)
-                      .slice(0, 20)
-                      .map(a => {
-                        const agent = a as any;
-                        return (
-                          <button
-                            key={a.id}
-                            type="button"
-                            onClick={() => {
-                              if (agent.task) setTask(agent.task);
-                              if (agent.type) setType(agent.type);
-                              if (agent.name) setName(agent.name);
-                              if (agent.repo) setRepo(agent.repo);
-                              setTab('spawn');
-                            }}
-                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800 transition-colors group"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono text-xs text-zinc-200 truncate">{a.name}</span>
-                              <span className={`text-[9px] font-mono ${a.status === 'done' ? 'text-emerald-500' : 'text-red-400'}`}>
-                                {a.status}
-                              </span>
-                            </div>
-                            <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
-                              {(agent.task || '').slice(0, 80)}
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-
-              {savedTasks.length === 0 && existingAgents.filter(a => a.status === 'done' || a.status === 'error').length === 0 && (
-                <p className="text-sm font-mono text-zinc-700 text-center py-4">no previous tasks</p>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : tab === 'tasks' ? (
+          /* ── REDO (recent agent runs) ── */
+          <div className="space-y-2">
+            <p className="text-[10px] font-mono text-zinc-600 mb-2">
+              Re-run a recent agent task. Click to load into the spawn form.
+            </p>
+            {existingAgents.filter(a => a.status === 'done' || a.status === 'error').length === 0 ? (
+              <p className="text-sm font-mono text-zinc-700 text-center py-8">no recent agent runs</p>
+            ) : (
+              <div className="space-y-1">
+                {existingAgents
+                  .filter(a => a.status === 'done' || a.status === 'error')
+                  .sort((a, b) => b.created_at - a.created_at)
+                  .slice(0, 20)
+                  .map(a => {
+                    const agent = a as any;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => {
+                          if (agent.task) setTask(agent.task);
+                          if (agent.type) setType(agent.type);
+                          if (agent.name) setName(agent.name);
+                          if (agent.repo) setRepo(agent.repo);
+                          setTab('spawn');
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs text-zinc-200 truncate">{a.name}</span>
+                          <span className={`text-[9px] font-mono ${a.status === 'done' ? 'text-emerald-500' : 'text-red-400'}`}>
+                            {a.status}
+                          </span>
+                        </div>
+                        <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
+                          {(agent.task || '').slice(0, 120)}
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         ) : null}
       </DialogContent>
