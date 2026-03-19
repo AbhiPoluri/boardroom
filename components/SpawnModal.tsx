@@ -213,41 +213,22 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
     <Dialog open={open} onOpenChange={() => { resetForm(); onClose(); }}>
       <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-mono text-zinc-100 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => { setTab('spawn'); setError(''); }}
-              className={`transition-colors ${tab === 'spawn' ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
-            >
-              spawn
-            </button>
-            <span className="text-zinc-700">/</span>
-            <button
-              type="button"
-              onClick={() => { setTab('configs'); setError(''); }}
-              className={`transition-colors flex items-center gap-1.5 ${tab === 'configs' ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              personas
-            </button>
-            <span className="text-zinc-700">/</span>
-            <button
-              type="button"
-              onClick={() => { setTab('import'); setError(''); }}
-              className={`transition-colors flex items-center gap-1.5 ${tab === 'import' ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              import
-            </button>
-            <span className="text-zinc-700">/</span>
-            <button
-              type="button"
-              onClick={() => { setTab('tasks'); setError(''); }}
-              className={`transition-colors flex items-center gap-1.5 ${tab === 'tasks' ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              redo
-            </button>
+          <DialogTitle className="font-mono text-sm text-zinc-100 flex items-center gap-2">
+            {(['spawn', 'personas', 'import', 'redo'] as const).map((t, i) => {
+              const tabKey = t === 'personas' ? 'configs' : t === 'redo' ? 'tasks' : t;
+              return (
+                <span key={t} className="flex items-center gap-2">
+                  {i > 0 && <span className="text-zinc-700">/</span>}
+                  <button
+                    type="button"
+                    onClick={() => { setTab(tabKey as ModalTab); setError(''); }}
+                    className={`transition-colors ${tab === tabKey ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
+                  >
+                    {t}
+                  </button>
+                </span>
+              );
+            })}
           </DialogTitle>
         </DialogHeader>
 
