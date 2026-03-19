@@ -633,7 +633,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
   }, [steps]);
 
   return (
-    <div className="flex flex-col relative">
+    <div className="flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="flex items-center gap-1">
@@ -670,7 +670,10 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
         </div>
       </div>
 
+      {/* Canvas + edit panel side by side */}
+      <div className="flex flex-1 overflow-hidden">
       {/* Canvas */}
+      <div className="flex-1 min-w-0">
       <div
         ref={(el) => {
           (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
@@ -1112,9 +1115,11 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
         )}
       </div>
 
+      </div>{/* end canvas wrapper */}
+
       {/* Selected node detail panel — right sidebar */}
       {selectedStep && selectedIdx !== null && (
-        <div className="absolute right-0 top-0 w-[280px] h-full border-l border-zinc-800 bg-zinc-900/95 backdrop-blur-sm p-3 font-mono overflow-y-auto z-[60]">
+        <div className="w-[280px] flex-shrink-0 border-l border-zinc-800 bg-zinc-900/95 p-3 font-mono overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">edit node</span>
             <div className="flex items-center gap-2">
@@ -1360,6 +1365,8 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
           </div>
         </div>
       )}
+
+      </div>{/* end flex row */}
 
       {/* Animations */}
       <style jsx>{`
