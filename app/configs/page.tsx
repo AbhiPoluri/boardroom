@@ -560,10 +560,12 @@ export default function ConfigsPage() {
                     <span className="text-[10px] font-mono text-zinc-600">{drafts.length}</span>
                   </div>
                   {drafts.map(d => (
-                    <button
+                    <div
                       key={d.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => loadDraftIntoEditor(d)}
-                      className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
+                      className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group cursor-pointer ${
                         currentDraftId === d.id ? 'bg-amber-950/30 text-amber-300 ring-1 ring-amber-500/20' : 'text-zinc-500 hover:bg-zinc-900'
                       }`}
                     >
@@ -578,7 +580,7 @@ export default function ConfigsPage() {
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
-                    </button>
+                    </div>
                   ))}
                 </>
               )}
@@ -662,10 +664,12 @@ export default function ConfigsPage() {
                     <span className="text-[10px] font-mono text-zinc-600">{drafts.length}</span>
                   </div>
                   {drafts.map(d => (
-                    <button
+                    <div
                       key={d.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => loadDraftIntoEditor(d)}
-                      className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
+                      className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group cursor-pointer ${
                         currentDraftId === d.id ? 'bg-amber-950/30 text-amber-300 ring-1 ring-amber-500/20' : 'text-zinc-500 hover:bg-zinc-900'
                       }`}
                     >
@@ -680,7 +684,7 @@ export default function ConfigsPage() {
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
-                    </button>
+                    </div>
                   ))}
                 </>
               )}
