@@ -66,8 +66,9 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     worktreePath = worktreeResult.path;
     updateAgent(agentId, { worktree_path: worktreePath });
     if (repo && useGitIsolation) {
+      const repoName = require('path').basename(repo);
       const safeName = (name || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
-      insertLog(agentId, 'system', `Git isolation ON — branch: boardroom/${safeName}-${agentId.slice(0, 8)}`);
+      insertLog(agentId, 'system', `Git isolation ON — branch: ${repoName}/${safeName}-${agentId.slice(0, 8)}`);
     }
   }
 
@@ -253,8 +254,9 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       if (useGitIsolation && repo && finalStatus === 'done' && worktreePath !== repo) {
         try {
           const { execSync } = require('child_process');
+          const repoName = require('path').basename(repo);
           const safeName = (name || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
-          const branch = `boardroom/${safeName}-${agentId.slice(0, 8)}`;
+          const branch = `${repoName}/${safeName}-${agentId.slice(0, 8)}`;
           const baseBranch = execSync(`git -C "${repo}" symbolic-ref --short HEAD`, { encoding: 'utf-8' }).trim();
           // Check if agent made any commits on its branch
           const commits = execSync(`git -C "${repo}" log ${baseBranch}..${branch} --oneline 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();

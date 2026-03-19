@@ -68,10 +68,11 @@ export async function createWorktree(agentId: string, repo?: string, agentName?:
   }
 
   try {
-    // Branch name: boardroom/agent-name-shortid (readable + unique)
+    // Branch name: reponame/agent-name-shortid
+    const repoName = path.basename(repo);
     const safeName = (agentName || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
     const shortId = agentId.slice(0, 8);
-    const branchName = `boardroom/${safeName}-${shortId}`;
+    const branchName = `${repoName}/${safeName}-${shortId}`;
     execSync(
       `git -C "${repo}" worktree add "${worktreePath}" -b "${branchName}"`,
       { stdio: 'pipe' }
