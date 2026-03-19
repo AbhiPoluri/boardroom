@@ -24,6 +24,15 @@ interface AgentConfig {
   prompt: string;
 }
 
+interface SavedTask {
+  id: string;
+  name: string;
+  task: string;
+  type: AgentType;
+  model: string;
+  repo: string;
+}
+
 interface SpawnModalProps {
   open: boolean;
   onClose: () => void;
@@ -71,6 +80,10 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
   const [error, setError] = useState('');
   const [templates, setTemplates] = useState<Record<string, { task: string; type: string; model: string }>>({});
 
+  // Saved tasks
+  const [savedTasks, setSavedTasks] = useState<SavedTask[]>([]);
+  const [savedFeedback, setSavedFeedback] = useState(false);
+
   // Load templates from localStorage after mount (SSR-safe)
   useEffect(() => {
     try {
@@ -78,6 +91,38 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
       if (saved) setTemplates(JSON.parse(saved));
     } catch {}
   }, []);
+
+  // Load saved tasks from localStorage after mount (SSR-safe)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('boardroom:saved-tasks');
+      if (saved) setSavedTasks(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  const saveCurrentTask = () => {
+    if (!task.trim()) return;
+    const savedName = name.trim() || task.trim().slice(0, 40);
+    const newTask: SavedTask = {
+      id: Date.now().toString(),
+      name: savedName,
+      task: task.trim(),
+      type,
+      model: model.trim(),
+      repo: repo.trim(),
+    };
+    const updated = [newTask, ...savedTasks];
+    setSavedTasks(updated);
+    localStorage.setItem('boardroom:saved-tasks', JSON.stringify(updated));
+    setSavedFeedback(true);
+    setTimeout(() => setSavedFeedback(false), 2000);
+  };
+
+  const deleteSavedTask = (id: string) => {
+    const updated = savedTasks.filter(t => t.id !== id);
+    setSavedTasks(updated);
+    localStorage.setItem('boardroom:saved-tasks', JSON.stringify(updated));
+  };
 
   // Load configs when opening the modal
   useEffect(() => {
@@ -467,6 +512,16 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                 <Save className="w-3.5 h-3.5" />
                 {saving ? 'saving...' : 'save persona'}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={saveCurrentTask}
+                disabled={!task.trim()}
+                className="font-mono border-zinc-700 text-zinc-400 hover:text-emerald-400 hover:border-emerald-800 hover:bg-emerald-950/30 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {savedFeedback ? 'saved!' : 'save task'}
+              </Button>
               <Button type="submit" disabled={loading || !task.trim()} className="font-mono bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
                 {loading ? 'spawning...' : 'spawn agent'}
               </Button>
@@ -557,43 +612,101 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
             <p className="text-[10px] font-mono text-zinc-600 mb-2">
               Re-run a previous agent task. Click to load it into the spawn form.
             </p>
-            {existingAgents.length === 0 ? (
-              <p className="text-sm font-mono text-zinc-700 text-center py-4">no previous tasks</p>
-            ) : (
-              <div className="max-h-[300px] overflow-y-auto space-y-1">
-                {existingAgents
-                  .filter(a => a.status === 'done' || a.status === 'error')
-                  .sort((a, b) => b.created_at - a.created_at)
-                  .slice(0, 20)
-                  .map(a => {
-                    const agent = a as any;
-                    return (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => {
-                          if (agent.task) setTask(agent.task);
-                          if (agent.type) setType(agent.type);
-                          if (agent.name) setName(agent.name);
-                          if (agent.repo) setRepo(agent.repo);
-                          setTab('spawn');
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800 transition-colors group"
+            <div className="max-h-[360px] overflow-y-auto space-y-3">
+              {/* SAVED section */}
+              {savedTasks.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest px-1 mb-1">Saved</p>
+                  <div className="space-y-1">
+                    {savedTasks.map(st => (
+                      <div
+                        key={st.id}
+                        className="w-full flex items-start gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900 transition-all group"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs text-zinc-200 truncate">{a.name}</span>
-                          <span className={`text-[9px] font-mono ${a.status === 'done' ? 'text-emerald-500' : 'text-red-400'}`}>
-                            {a.status}
-                          </span>
-                        </div>
-                        <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
-                          {(agent.task || '').slice(0, 80)}
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTask(st.task);
+                            setType(st.type);
+                            setModel(st.model);
+                            setRepo(st.repo);
+                            setName(st.name);
+                            setTab('spawn');
+                          }}
+                          className="flex-1 text-left min-w-0"
+                        >
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs text-zinc-200 truncate">{st.name}</span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{st.type}</span>
+                            {st.model && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-blue-400/70">{st.model}</span>
+                            )}
+                            {st.repo && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-600 truncate max-w-[100px]">{st.repo}</span>
+                            )}
+                          </div>
+                          <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
+                            {st.task.slice(0, 80)}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSavedTask(st.id)}
+                          className="flex-shrink-0 mt-0.5 p-1 rounded text-zinc-700 hover:text-red-400 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-all"
+                          title="Remove saved task"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* RECENT section */}
+              {existingAgents.filter(a => a.status === 'done' || a.status === 'error').length > 0 && (
+                <div>
+                  <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest px-1 mb-1">Recent</p>
+                  <div className="space-y-1">
+                    {existingAgents
+                      .filter(a => a.status === 'done' || a.status === 'error')
+                      .sort((a, b) => b.created_at - a.created_at)
+                      .slice(0, 20)
+                      .map(a => {
+                        const agent = a as any;
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => {
+                              if (agent.task) setTask(agent.task);
+                              if (agent.type) setType(agent.type);
+                              if (agent.name) setName(agent.name);
+                              if (agent.repo) setRepo(agent.repo);
+                              setTab('spawn');
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800 transition-colors group"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-xs text-zinc-200 truncate">{a.name}</span>
+                              <span className={`text-[9px] font-mono ${a.status === 'done' ? 'text-emerald-500' : 'text-red-400'}`}>
+                                {a.status}
+                              </span>
+                            </div>
+                            <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
+                              {(agent.task || '').slice(0, 80)}
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {savedTasks.length === 0 && existingAgents.filter(a => a.status === 'done' || a.status === 'error').length === 0 && (
+                <p className="text-sm font-mono text-zinc-700 text-center py-4">no previous tasks</p>
+              )}
+            </div>
           </div>
         ) : null}
       </DialogContent>
