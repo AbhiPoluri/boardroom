@@ -8,7 +8,7 @@ Agent orchestration platform. Spawn, manage, and coordinate AI coding agents fro
 - **Orchestrator** — Chat interface that spawns and coordinates agents across repos
 - **Workflows** — Visual DAG pipelines with output passing, evaluator loops, router nodes
 - **Fleet** — Monitor all agents with live logs, costs, token usage, branch tracking
-- **Skills/Configs** — Reusable agent templates and prompt configs
+- **Personas** — Reusable prompt personas for agents
 
 ## Requirements
 

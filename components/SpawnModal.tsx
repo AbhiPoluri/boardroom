@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from './ui/label';
-import { FolderOpen, FileText, Bot, Bug, TestTube, BookOpen, Wrench, Save, Trash2, Plus, X } from 'lucide-react';
+import { FolderOpen, FileText, Bot, Bug, TestTube, BookOpen, Wrench, Save, Trash2, Plus, X, RotateCcw } from 'lucide-react';
 import type { AgentType } from '@/types';
 
 interface AgentConfig {
@@ -29,10 +29,10 @@ interface SpawnModalProps {
   onClose: () => void;
   onSpawn: (data: { task: string; type: AgentType; repo?: string; useGitIsolation?: boolean; name?: string; model?: string; depends_on?: string[] }) => Promise<void>;
   onImport: (data: { path: string; name?: string; task?: string; type?: AgentType; model?: string }) => Promise<void>;
-  existingAgents?: Array<{ id: string; name: string; status: string; created_at: number }>;
+  existingAgents?: Array<{ id: string; name: string; status: string; created_at: number; task?: string; type?: string; repo?: string | null }>;
 }
 
-type ModalTab = 'spawn' | 'configs' | 'import';
+type ModalTab = 'spawn' | 'configs' | 'import' | 'tasks';
 
 const SLUG_ICONS: Record<string, typeof Bot> = {
   'code-reviewer': Bug,
@@ -183,7 +183,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               className={`transition-colors flex items-center gap-1.5 ${tab === 'configs' ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
             >
               <FileText className="w-3.5 h-3.5" />
-              agents
+              personas
             </button>
             <span className="text-zinc-700">/</span>
             <button
@@ -194,18 +194,27 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               <FolderOpen className="w-3.5 h-3.5" />
               import
             </button>
+            <span className="text-zinc-700">/</span>
+            <button
+              type="button"
+              onClick={() => { setTab('tasks'); setError(''); }}
+              className={`transition-colors flex items-center gap-1.5 ${tab === 'tasks' ? 'text-zinc-100' : 'text-zinc-600 hover:text-zinc-400'}`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              redo
+            </button>
           </DialogTitle>
         </DialogHeader>
 
         {tab === 'configs' ? (
-          /* ── AGENT CONFIGS ── */
+          /* ── PERSONAS ── */
           <div className="space-y-2">
             <p className="text-[10px] font-mono text-zinc-600 mb-2">
-              Pre-configured agents from <code className="text-zinc-500">agents/*.md</code> — click to load into spawn form
+              Saved personas from <code className="text-zinc-500">agents/*.md</code> — click to load into spawn form
             </p>
             {configs.length === 0 ? (
               <div className="text-center py-8 text-zinc-700 font-mono text-xs">
-                {configsLoaded ? 'no agent configs found in agents/' : 'loading...'}
+                {configsLoaded ? 'no personas found in agents/' : 'loading...'}
               </div>
             ) : (
               <div className="space-y-1.5 max-h-[340px] overflow-y-auto">
@@ -456,14 +465,14 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                 className="font-mono border-zinc-700 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 disabled:opacity-50 flex items-center gap-1.5"
               >
                 <Save className="w-3.5 h-3.5" />
-                {saving ? 'saving...' : 'save agent'}
+                {saving ? 'saving...' : 'save persona'}
               </Button>
               <Button type="submit" disabled={loading || !task.trim()} className="font-mono bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
                 {loading ? 'spawning...' : 'spawn agent'}
               </Button>
             </DialogFooter>
           </form>
-        ) : (
+        ) : tab === 'import' ? (
           /* ── IMPORT ── */
           <form onSubmit={handleImportSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -541,7 +550,52 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
               </Button>
             </DialogFooter>
           </form>
-        )}
+        ) : tab === 'tasks' ? (
+
+          /* ── REDO TASKS ── */
+          <div className="space-y-2">
+            <p className="text-[10px] font-mono text-zinc-600 mb-2">
+              Re-run a previous agent task. Click to load it into the spawn form.
+            </p>
+            {existingAgents.length === 0 ? (
+              <p className="text-sm font-mono text-zinc-700 text-center py-4">no previous tasks</p>
+            ) : (
+              <div className="max-h-[300px] overflow-y-auto space-y-1">
+                {existingAgents
+                  .filter(a => a.status === 'done' || a.status === 'error')
+                  .sort((a, b) => b.created_at - a.created_at)
+                  .slice(0, 20)
+                  .map(a => {
+                    const agent = a as any;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => {
+                          if (agent.task) setTask(agent.task);
+                          if (agent.type) setType(agent.type);
+                          if (agent.name) setName(agent.name);
+                          if (agent.repo) setRepo(agent.repo);
+                          setTab('spawn');
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800 transition-colors group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs text-zinc-200 truncate">{a.name}</span>
+                          <span className={`text-[9px] font-mono ${a.status === 'done' ? 'text-emerald-500' : 'text-red-400'}`}>
+                            {a.status}
+                          </span>
+                        </div>
+                        <div className="font-mono text-[10px] text-zinc-600 truncate mt-0.5">
+                          {(agent.task || '').slice(0, 80)}
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

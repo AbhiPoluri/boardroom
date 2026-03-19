@@ -516,8 +516,8 @@ export default function ConfigsPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
-          <h1 className="font-mono text-sm text-zinc-100">agent configs</h1>
-          <span className="text-[10px] font-mono text-zinc-600">agents/*.md</span>
+          <h1 className="font-mono text-sm text-zinc-100">personas</h1>
+          <span className="text-[10px] font-mono text-zinc-600">personas</span>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -534,7 +534,7 @@ export default function ConfigsPage() {
             className="font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-7 px-3"
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
-            new agent
+            new persona
           </Button>
         </div>
       </div>
@@ -548,7 +548,7 @@ export default function ConfigsPage() {
             <>
               <div className="p-4 text-xs font-mono text-zinc-700">
                 no configs found<br />
-                <span className="text-zinc-600">create one with + new agent</span>
+                <span className="text-zinc-600">create one with + new persona</span>
               </div>
               {drafts.length > 0 && (
                 <>
@@ -596,7 +596,7 @@ export default function ConfigsPage() {
                     <ChevronRight className="w-3 h-3 text-zinc-600" />
                   )}
                   <Package className="w-3 h-3 text-zinc-500" />
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">templates</span>
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">persona templates</span>
                   <span className="ml-auto text-[10px] font-mono text-zinc-700">{AGENT_TEMPLATES.length}</span>
                 </button>
                 {templatesOpen && (
@@ -700,7 +700,7 @@ export default function ConfigsPage() {
                     <ChevronRight className="w-3 h-3 text-zinc-600" />
                   )}
                   <Package className="w-3 h-3 text-zinc-500" />
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">templates</span>
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">persona templates</span>
                   <span className="ml-auto text-[10px] font-mono text-zinc-700">{AGENT_TEMPLATES.length}</span>
                 </button>
                 {templatesOpen && (
@@ -741,7 +741,7 @@ export default function ConfigsPage() {
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <FileText className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
-                <p className="font-mono text-sm text-zinc-600">select an agent to edit</p>
+                <p className="font-mono text-sm text-zinc-600">select a persona to edit</p>
                 <p className="font-mono text-[10px] text-zinc-700 mt-1">or drag & drop .md files here</p>
               </div>
             </div>
@@ -751,7 +751,7 @@ export default function ConfigsPage() {
               <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/50">
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xs text-zinc-400">
-                    {isNew ? 'new agent' : `agents/${selected}.md`}
+                    {isNew ? 'new persona' : `agents/${selected}.md`}
                   </span>
                   {currentDraftId && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-500 border border-amber-800/30">draft</span>}
                   {dirty && <span className="text-[10px] font-mono text-amber-500">unsaved</span>}

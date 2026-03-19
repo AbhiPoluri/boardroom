@@ -14,7 +14,7 @@ import {
 const NAV_ITEMS = [
   { href: '/workspace', icon: SquareCode, label: 'workspace' },
   { href: '/', icon: Home, label: 'fleet' },
-  { href: '/configs', icon: FileText, label: 'agents' },
+  { href: '/configs', icon: FileText, label: 'personas' },
   { href: '/skills', icon: Zap, label: 'skills' },
   { href: '/costs', icon: DollarSign, label: 'costs' },
   { href: '/workflows', icon: Workflow, label: 'workflows' },
@@ -26,7 +26,7 @@ const NAV_ITEMS = [
 ];
 
 const QUICK_ACTIONS = [
-  { label: 'spawn agent', hint: 'new', href: '/configs?new=1', icon: Plus },
+  { label: 'spawn with persona', hint: 'new', href: '/configs?new=1', icon: Plus },
   { label: 'new workflow', hint: 'new', href: '/workflows?new=1', icon: Plus },
   { label: 'new skill', hint: 'new', href: '/skills?new=1', icon: Plus },
   { label: 'new cron job', hint: 'new', href: '/cron?new=1', icon: Plus },

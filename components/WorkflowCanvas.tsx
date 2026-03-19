@@ -1205,7 +1205,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
           {/* Agent Config */}
           {agentConfigs && agentConfigs.length > 0 && (
             <div className="mb-3">
-              <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">agent config</label>
+              <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">persona</label>
               <select
                 value={selectedStep.agentConfig || ''}
                 onChange={(e) => {
@@ -1246,7 +1246,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
             <textarea
               value={selectedStep.task}
               onChange={(e) => updateStep(selectedIdx, 'task', e.target.value)}
-              placeholder={selectedStep.agentConfig ? 'Extra context or overrides on top of the agent config...' : 'What should this step do...'}
+              placeholder={selectedStep.agentConfig ? 'Extra context or overrides on top of the persona...' : 'What should this step do...'}
               rows={3}
               className="w-full px-2 py-1.5 text-xs bg-zinc-950/60 border border-zinc-800 rounded-md text-zinc-300 font-mono resize-none focus:outline-none focus:ring-1 focus:ring-zinc-600 placeholder:text-zinc-700"
             />
