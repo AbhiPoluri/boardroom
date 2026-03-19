@@ -105,7 +105,7 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
     // Escape for single-quote shell embedding
     const escapedPrompt = prompt.replace(/'/g, `'\\''`);
     // Use stream-json to get real-time events (thinking, text chunks) as they happen
-    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --output-format json '${escapedPrompt}'`;
+    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --model sonnet --output-format json '${escapedPrompt}'`;
 
     // Use PTY so the orchestrator terminal can render live output
     const ptyProc = pty.spawn('/bin/sh', ['-c', cmd], {
