@@ -28,7 +28,7 @@ Build tools for native modules (usually pre-installed on macOS):
 ## Setup
 
 ```bash
-git clone <repo-url> && cd boardroom
+git clone https://github.com/AbhiPoluri/boardroom.git && cd boardroom
 npm install
 npm run dev
 ```
