@@ -211,7 +211,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
   return (
     <Dialog open={open} onOpenChange={() => { resetForm(); onClose(); }}>
-      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-3xl w-full h-[80vh] flex flex-col overflow-hidden">
+      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-3xl w-full h-[80vh] !flex !flex-col !gap-2 overflow-hidden">
         <DialogHeader>
           <DialogTitle className="font-mono text-sm text-zinc-100 flex items-center gap-2">
             {(['spawn', 'personas', 'import', 'saved', 'redo'] as const).map((t, i) => {
@@ -232,7 +232,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === 'configs' ? (
           /* ── PERSONAS ── */
           <div className="space-y-2">
@@ -284,7 +284,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
                 })}
               </div>
             )}
-            <DialogFooter className="gap-2 pt-2 flex-wrap">
+            <DialogFooter className="gap-2 pt-2 flex-wrap mt-auto">
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800">
                 cancel
               </Button>
@@ -292,7 +292,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
           </div>
         ) : tab === 'spawn' ? (
           /* ── SPAWN ── */
-          <form onSubmit={handleSpawnSubmit} className="space-y-4">
+          <form onSubmit={handleSpawnSubmit} className="space-y-4 flex flex-col h-full">
             {/* Task Templates */}
             {Object.keys(templates).length > 0 && (
               <div className="space-y-1.5">
@@ -462,7 +462,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
             {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
 
-            <DialogFooter className="gap-2 flex-wrap">
+            <DialogFooter className="gap-2 flex-wrap mt-auto">
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" disabled={loading}>
                 cancel
               </Button>
@@ -511,7 +511,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
           </form>
         ) : tab === 'import' ? (
           /* ── IMPORT ── */
-          <form onSubmit={handleImportSubmit} className="space-y-4">
+          <form onSubmit={handleImportSubmit} className="space-y-4 flex flex-col h-full">
             <div className="space-y-1.5">
               <Label className="font-mono text-xs text-zinc-400">Directory Path</Label>
               <Input
@@ -578,7 +578,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
             {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
 
-            <DialogFooter className="gap-2 flex-wrap">
+            <DialogFooter className="gap-2 flex-wrap mt-auto">
               <Button type="button" variant="ghost" onClick={onClose} className="font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800" disabled={loading}>
                 cancel
               </Button>
