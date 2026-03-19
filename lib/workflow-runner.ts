@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents, updateWorkflowRunDetail, getWorkflowRunById } from './db';
 import { spawnAgent } from './spawner';
+import { loadAgentConfigs } from '@/lib/agent-configs';
 import type { AgentType } from '@/types';
 
 // Default sandbox repo for workflow agents — keeps test runs out of the main codebase
@@ -22,6 +23,8 @@ export interface WorkflowStep {
   maxRetries?: number;
   /** For router: possible route targets (step names) */
   routes?: string[];
+  /** Slug of a saved agent config to use as the base for this step */
+  agentConfig?: string;
 }
 
 export interface WorkflowRunResult {
@@ -269,15 +272,34 @@ async function spawnStepAgent(
   const agentName = `wf-${step.name}`;
   const now = Date.now();
 
+  // Resolve agent config overrides if specified
+  let resolvedType = step.type;
+  let resolvedModel = step.model || 'sonnet';
+  let configPromptPrefix = '';
+
+  if (step.agentConfig) {
+    const configs = loadAgentConfigs();
+    const config = configs.find(c => c.slug === step.agentConfig || c.name === step.agentConfig);
+    if (config) {
+      resolvedType = config.type;
+      if (config.model) resolvedModel = config.model;
+      configPromptPrefix = config.prompt;
+    }
+  }
+
   // Build the full task with upstream context
   const context = buildUpstreamContext(step, allSteps, stepOutputs);
   const baseTask = taskOverride || step.task;
-  const fullTask = context ? `${baseTask}${context}` : baseTask;
+  // If a config prompt prefix exists, prepend it; the step task becomes additional context
+  const taskWithConfig = configPromptPrefix
+    ? (baseTask.trim() ? `${configPromptPrefix}\n\n---\nAdditional instructions:\n${baseTask}` : configPromptPrefix)
+    : baseTask;
+  const fullTask = context ? `${taskWithConfig}${context}` : taskWithConfig;
 
   createAgent({
     id: agentId,
     name: agentName,
-    type: step.type,
+    type: resolvedType,
     status: 'spawning',
     task: fullTask,
     repo: repo || null,
@@ -290,7 +312,8 @@ async function spawnStepAgent(
   const typeLabel = step.stepType === 'evaluator' ? ' [evaluator]'
     : step.stepType === 'router' ? ' [router]'
     : '';
-  insertLog(agentId, 'system', `Workflow step ${stepIdx + 1}: "${step.name}"${typeLabel}`);
+  const configLabel = step.agentConfig ? ` [config: ${step.agentConfig}]` : '';
+  insertLog(agentId, 'system', `Workflow step ${stepIdx + 1}: "${step.name}"${typeLabel}${configLabel}`);
   if (context) {
     insertLog(agentId, 'system', `Injected context from: ${(step.dependsOn || []).join(', ') || 'previous steps'}`);
   }
@@ -298,10 +321,10 @@ async function spawnStepAgent(
   spawnAgent({
     agentId,
     name: agentName,
-    type: step.type,
+    type: resolvedType,
     task: fullTask,
     repo,
-    model: step.model || 'sonnet',
+    model: resolvedModel,
   }).catch((err) => {
     console.error(`[workflow] Failed to spawn step "${step.name}":`, err);
   });

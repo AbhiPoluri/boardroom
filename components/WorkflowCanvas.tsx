@@ -15,6 +15,15 @@ interface WorkflowStep {
   stepType?: 'standard' | 'evaluator' | 'router';
   maxRetries?: number;
   routes?: string[];
+  agentConfig?: string;
+}
+
+interface AgentConfigOption {
+  slug: string;
+  name: string;
+  type: string;
+  model?: string;
+  description: string;
 }
 
 interface CanvasProps {
@@ -23,6 +32,7 @@ interface CanvasProps {
   isRunning?: boolean;
   runAgents?: Array<{ stepName: string; agentId: string; status: string }>;
   stepOutputs?: Record<string, string>;
+  agentConfigs?: AgentConfigOption[];
 }
 
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
@@ -152,7 +162,7 @@ function bezierMidpoint(x1: number, y1: number, cx1: number, cy1: number, cx2: n
   };
 }
 
-export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, stepOutputs }: CanvasProps) {
+export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, stepOutputs, agentConfigs }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasFocusRef = useRef<HTMLDivElement>(null);
@@ -903,6 +913,11 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
                         router
                       </span>
                     )}
+                    {step.agentConfig && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded border border-indigo-700/50 text-indigo-400 bg-indigo-500/10 truncate max-w-[70px]" title={step.agentConfig}>
+                        {step.agentConfig}
+                      </span>
+                    )}
                     {runStatus && (
                       <span className={`text-[9px] px-1.5 py-0.5 rounded ml-auto ${
                         isActive ? 'bg-emerald-500/15 text-emerald-400 animate-pulse'
@@ -1182,13 +1197,51 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
             </div>
           </div>
 
+          {/* Agent Config */}
+          {agentConfigs && agentConfigs.length > 0 && (
+            <div className="mb-3">
+              <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">agent config</label>
+              <select
+                value={selectedStep.agentConfig || ''}
+                onChange={(e) => {
+                  const slug = e.target.value;
+                  if (!slug) {
+                    updateStep(selectedIdx, 'agentConfig', undefined);
+                  } else {
+                    const cfg = agentConfigs.find(c => c.slug === slug);
+                    const updates: Partial<WorkflowStep> = { agentConfig: slug };
+                    if (cfg) {
+                      updates.type = cfg.type as AgentType;
+                      if (cfg.model) updates.model = cfg.model;
+                    }
+                    handleChange(steps.map((s, i) => i === selectedIdx ? { ...s, ...updates } : s));
+                  }
+                }}
+                className="w-full h-7 px-2 text-xs bg-zinc-950/60 border border-zinc-800 rounded-md text-zinc-200 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-700"
+              >
+                <option value="">none (custom task)</option>
+                {agentConfigs.map(cfg => (
+                  <option key={cfg.slug} value={cfg.slug}>{cfg.name}</option>
+                ))}
+              </select>
+              {selectedStep.agentConfig && (() => {
+                const cfg = agentConfigs.find(c => c.slug === selectedStep.agentConfig);
+                return cfg?.description ? (
+                  <p className="text-[9px] text-indigo-400/70 mt-1">{cfg.description}</p>
+                ) : null;
+              })()}
+            </div>
+          )}
+
           {/* Task */}
           <div className="mb-3">
-            <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">task</label>
+            <label className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1 block">
+              {selectedStep.agentConfig ? 'additional instructions (optional)' : 'task'}
+            </label>
             <textarea
               value={selectedStep.task}
               onChange={(e) => updateStep(selectedIdx, 'task', e.target.value)}
-              placeholder="What should this step do..."
+              placeholder={selectedStep.agentConfig ? 'Extra context or overrides on top of the agent config...' : 'What should this step do...'}
               rows={3}
               className="w-full px-2 py-1.5 text-xs bg-zinc-950/60 border border-zinc-800 rounded-md text-zinc-300 font-mono resize-none focus:outline-none focus:ring-1 focus:ring-zinc-600 placeholder:text-zinc-700"
             />

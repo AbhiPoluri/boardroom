@@ -25,6 +25,7 @@ interface WorkflowStep {
   stepType?: 'standard' | 'evaluator' | 'router';
   maxRetries?: number;
   routes?: string[];
+  agentConfig?: string;
 }
 
 interface WorkflowDef {
@@ -93,8 +94,17 @@ function genDraftId() {
   return `draft_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+interface AgentConfigOption {
+  slug: string;
+  name: string;
+  type: string;
+  model?: string;
+  description: string;
+}
+
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowDef[]>([]);
+  const [agentConfigs, setAgentConfigs] = useState<AgentConfigOption[]>([]);
   const [drafts, setDrafts] = useState<DraftState[]>([]);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -217,12 +227,16 @@ export default function WorkflowsPage() {
       isDirty.current = true; // existing draft — keep auto-saving
     }
 
-    fetch('/api/workflows').then(r => r.json()).then(data => {
-      setWorkflows(data.workflows || []);
+    Promise.all([
+      fetch('/api/workflows').then(r => r.json()),
+      fetch('/api/agent-configs').then(r => r.json()).catch(() => ({ configs: [] })),
+    ]).then(([wfData, cfgData]) => {
+      setWorkflows(wfData.workflows || []);
+      setAgentConfigs(cfgData.configs || []);
       setLoading(false);
       // If restoring a draft editing an existing workflow, re-select it
       if (storedActiveDraft?.selected && !storedActiveDraft.isNew) {
-        const wf = (data.workflows || []).find((w: WorkflowDef) => w.id === storedActiveDraft.selected);
+        const wf = (wfData.workflows || []).find((w: WorkflowDef) => w.id === storedActiveDraft.selected);
         if (wf) setSelected(wf.id);
       }
     }).catch(() => setLoading(false));
@@ -928,6 +942,7 @@ export default function WorkflowsPage() {
                   onChange={(steps) => { isDirty.current = true; setEdSteps(steps); }}
                   isRunning={running}
                   runAgents={runAgents}
+                  agentConfigs={agentConfigs}
                 />
 
                 {/* Schedule section */}
