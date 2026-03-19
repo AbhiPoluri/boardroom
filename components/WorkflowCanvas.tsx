@@ -1119,7 +1119,7 @@ export default function WorkflowCanvas({ steps, onChange, isRunning, runAgents, 
 
       {/* Selected node detail panel — right sidebar */}
       {selectedStep && selectedIdx !== null && (
-        <div className="w-[280px] flex-shrink-0 border-l border-zinc-800 bg-zinc-900/95 p-3 font-mono overflow-y-auto">
+        <div className="w-[280px] flex-shrink-0 border-l border-zinc-800 bg-zinc-900/95 rounded-r-xl p-3 font-mono overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">edit node</span>
             <div className="flex items-center gap-2">
