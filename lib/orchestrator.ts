@@ -166,7 +166,7 @@ interface OrchestratorResponse {
 }
 
 /** Resolve a repo path — tries the exact path first, then common locations */
-function resolveRepoPath(repoPath: string): string | null {
+function resolveRepoPath(repoPath: string): string | undefined {
   const fs = require('fs');
   const path = require('path');
   const home = os.homedir();
@@ -192,7 +192,7 @@ function resolveRepoPath(repoPath: string): string | null {
     if (fs.existsSync(candidate)) return candidate;
   }
 
-  return null;
+  return undefined;
 }
 
 async function executeAction(action: OrchestratorAction): Promise<unknown> {
