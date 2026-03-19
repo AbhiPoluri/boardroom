@@ -8,7 +8,7 @@ import { PtyTerminal } from '@/components/PtyTerminal';
 import {
   Terminal, PanelLeftClose, FileText, DollarSign,
   Workflow, Clock, ScrollText, Home, Code2, GitBranch,
-  GripHorizontal, Zap, SquareCode, Plus, Search,
+  GripHorizontal, Zap, SquareCode, Plus, Search, Wrench,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { href: '/cron', icon: Clock, label: 'cron' },
   { href: '/logs', icon: ScrollText, label: 'logs' },
   { href: '/api-docs', icon: Code2, label: 'api' },
+  { href: '/setup', icon: Wrench, label: 'setup' },
 ];
 
 const QUICK_ACTIONS = [

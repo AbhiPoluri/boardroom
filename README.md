@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Boardroom
 
-## Getting Started
+Agent orchestration platform. Spawn, manage, and coordinate AI coding agents from a single dashboard.
 
-First, run the development server:
+## What it does
+
+- **Workspace** — IDE with file browser, multi-tab editor, syntax highlighting, git status, inline diff viewer, PR review
+- **Orchestrator** — Chat interface that spawns and coordinates agents across repos
+- **Workflows** — Visual DAG pipelines with output passing, evaluator loops, router nodes
+- **Fleet** — Monitor all agents with live logs, costs, token usage, branch tracking
+- **Skills/Configs** — Reusable agent templates and prompt configs
+
+## Requirements
+
+- **Node.js 20+** — native modules (better-sqlite3, node-pty) require it
+- **Git** — agents use worktrees for branch isolation
+- **Claude Code CLI** — authenticated with `claude login`
+- **Claude Max or Pro** — agents run via CLI subscription, no API key needed
+
+Build tools for native modules (usually pre-installed on macOS):
+- Python 3, make, g++ (for `npm install` to compile better-sqlite3 and node-pty)
+
+### Optional
+
+- **Codex CLI** (`npm i -g @openai/codex`) — for `codex` agent type
+- **OpenCode CLI** (opencode.ai) — for `opencode` agent type
+
+## Setup
 
 ```bash
+git clone <repo-url> && cd boardroom
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Opens on http://localhost:7391
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build && npm start
+```
 
-## Learn More
+Or with Docker:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+BOARDROOM_API_KEY=$(openssl rand -hex 32) docker compose up -d
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `BOARDROOM_API_KEY` | No | empty (no auth) | Protects all API routes. Set for production. |
+| `DB_PATH` | No | `.boardroom.db` | SQLite database location |
+| `WORKFLOW_SANDBOX_REPO` | No | `~/boardroom-sandbox` | Where workflow agents run |
+| `PORT` | No | `3000` | Server port (dev uses 7391) |
 
-## Deploy on Vercel
+**Not needed:** `ANTHROPIC_API_KEY` — the orchestrator and agents use `claude --print` which authenticates via your Claude Code CLI login, not an API key.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Architecture
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+boardroom/
+├── app/                  # Next.js pages + API routes
+│   ├── workspace/        # IDE: file browser, editor, diff, PRs
+│   ├── workflows/        # Visual pipeline builder + runner
+│   ├── orchestrator/     # Chat UI for the orchestrator
+│   ├── configs/          # Agent config templates
+│   ├── skills/           # Claude Code skills manager
+│   ├── cron/             # Scheduled agent jobs
+│   ├── costs/            # Token usage + cost tracking
+│   ├── logs/             # Live agent log viewer
+│   ├── branches/         # Git worktree + branch manager
+│   └── api/              # 20+ API endpoints
+├── components/           # React components
+├── lib/                  # Core logic
+│   ├── orchestrator.ts   # Claude CLI orchestration
+│   ├── spawner.ts        # Agent process management
+│   ├── workflow-runner.ts# DAG execution engine
+│   ├── db.ts             # SQLite database
+│   └── worktree.ts       # Git worktree operations
+└── middleware.ts          # API key auth
+```
+
+## Agent Types
+
+| Type | CLI | Description |
+|------|-----|-------------|
+| `claude` | Claude Code | Full coding agent with tools, file access, git |
+| `codex` | OpenAI Codex | `--full-auto` mode |
+| `opencode` | OpenCode | `opencode run` for non-interactive |
+| `custom` | Shell | Raw shell command execution |
+| `test` | Echo | Quick test/debug agent |
+
+## Key Features
+
+- **Cmd+K** command palette for global navigation
+- **Git isolation** — each agent gets its own worktree branch
+- **Auto push requests** — agents create PRs when they finish
+- **Workflow presets** — use saved agent configs in pipeline steps
+- **Agent swarm** — orchestrator can spawn parallel agent teams
+- **Cost optimizer** — suggestions to reduce token spend
+- **Semantic search** — grep-powered code search in workspace
+- **Mobile responsive** — icons-only nav on small screens
+
+## License
+
+MIT
