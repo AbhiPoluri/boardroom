@@ -1694,12 +1694,22 @@ export default function WorkspacePage() {
                               </div>
                             );
                           }
+                          return null; // handled below
+                        }).filter(Boolean)}
+                        {/* Render non-thinking/waiting content as markdown */}
+                        {(() => {
+                          const contentLines = msg.content.split('\n').filter(line => {
+                            const trimmed = line.trim();
+                            return trimmed && !trimmed.startsWith('💭') && !trimmed.startsWith('⏳') && !trimmed.includes('waiting for');
+                          });
+                          if (contentLines.length === 0) return null;
+                          const Md = require('@/components/Markdown').Markdown;
                           return (
-                            <div key={li} className="text-zinc-300 px-2.5 py-0.5 bg-zinc-900 rounded border border-zinc-800/50">
-                              {line}
+                            <div className="px-2.5 py-1.5 bg-zinc-900 rounded border border-zinc-800/50">
+                              <Md content={contentLines.join('\n')} className="text-zinc-300" />
                             </div>
                           );
-                        })}
+                        })()}
                       </>
                     )}
                     {msg.tools && msg.tools.length > 0 && (

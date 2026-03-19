@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, ChevronDown, ChevronUp, Zap, Terminal, CheckCircle, Trash2, RotateCcw, GitMerge, X, Check, Eye } from 'lucide-react';
+import { Markdown } from '@/components/Markdown';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -97,8 +98,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           />
         ))}
         {msg.content && (
-          <div className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 text-sm font-mono whitespace-pre-wrap">
-            {msg.content}
+          <div className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 text-sm font-mono">
+            <Markdown content={msg.content} />
           </div>
         )}
         {msg.events?.some(e => e.type === 'error') && (
