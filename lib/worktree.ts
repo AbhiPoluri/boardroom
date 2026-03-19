@@ -3,7 +3,8 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-const WORKTREES_DIR = path.join(os.homedir(), 'boardroom', 'worktrees');
+// Worktrees live outside any repo to avoid git confusion
+const WORKTREES_DIR = path.join(os.homedir(), '.boardroom', 'worktrees');
 
 export interface WorktreeResult {
   path: string;
