@@ -262,7 +262,7 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
           <div className="text-sm font-mono font-medium text-zinc-200 truncate mb-0.5">
             {agent.name || agent.id.slice(0, 8)}
           </div>
-          <div className="text-[11px] font-mono text-zinc-500 line-clamp-2 leading-relaxed mb-2">
+          <div className="text-[11px] font-mono text-zinc-500 truncate leading-relaxed mb-2" title={agent.task}>
             {agent.task}
           </div>
 
