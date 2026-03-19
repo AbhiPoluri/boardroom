@@ -42,8 +42,8 @@ export interface SpawnOptions {
 
 export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; worktreePath: string }> {
   const { agentId, name, type, task, repo, model, existingWorktreePath } = opts;
-  // Default: use git isolation when a repo is provided (each agent gets its own branch)
-  const useGitIsolation = opts.useGitIsolation ?? !!repo;
+  // Only use git isolation when explicitly requested (workspace, workflows)
+  const useGitIsolation = opts.useGitIsolation ?? false;
 
   insertLog(agentId, 'system', `Agent "${name}" starting up (type: ${type})`);
 

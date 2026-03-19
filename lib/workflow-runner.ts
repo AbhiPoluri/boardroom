@@ -326,6 +326,7 @@ async function spawnStepAgent(
     task: fullTask,
     repo,
     model: resolvedModel,
+    useGitIsolation: true,
   }).catch((err) => {
     console.error(`[workflow] Failed to spawn step "${step.name}":`, err);
   });

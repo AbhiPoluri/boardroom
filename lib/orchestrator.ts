@@ -226,7 +226,7 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         port: null,
         created_at: now,
       });
-      await spawnAgent({ agentId: id, task, type: type || 'claude', name: agentName, repo, model });
+      await spawnAgent({ agentId: id, task, type: type || 'claude', name: agentName, repo, model, useGitIsolation: !!repo });
       return { id, status: 'spawning', message: `Agent "${agentName}" (${id.slice(0, 8)}) spawned${model ? ` with model ${model}` : ''}` };
     }
     case 'resume_agent': {
@@ -330,7 +330,7 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
           port: null,
           created_at: now,
         });
-        await spawnAgent({ agentId: id, task: swarmTask, type: 'claude', name: def.name, repo, model: (model as string | undefined) || 'sonnet' });
+        await spawnAgent({ agentId: id, task: swarmTask, type: 'claude', name: def.name, repo, model: (model as string | undefined) || 'sonnet', useGitIsolation: !!repo });
         ids.push({ name: def.name, id: id.slice(0, 8) });
       }
       return { agents: ids, message: `Swarm of ${ids.length} agents spawned` };
