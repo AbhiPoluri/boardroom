@@ -211,7 +211,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
 
   return (
     <Dialog open={open} onOpenChange={() => { resetForm(); onClose(); }}>
-      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-3xl w-full h-[80vh] overflow-y-auto">
+      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-3xl w-full h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="font-mono text-sm text-zinc-100 flex items-center gap-2">
             {(['spawn', 'personas', 'import', 'saved', 'redo'] as const).map((t, i) => {
@@ -232,6 +232,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
           </DialogTitle>
         </DialogHeader>
 
+        <div className="flex-1 overflow-y-auto">
         {tab === 'configs' ? (
           /* ── PERSONAS ── */
           <div className="space-y-2">
@@ -679,6 +680,7 @@ export function SpawnModal({ open, onClose, onSpawn, onImport, existingAgents = 
             )}
           </div>
         ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
