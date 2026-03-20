@@ -47,6 +47,11 @@ export default function Dashboard() {
   const [showMerge, setShowMerge] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showDepGraph, setShowDepGraph] = useState(false);
+
+  // Batch selection state
+  const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
+  const [killing, setKilling] = useState(false);
 
   // Filtering / sorting / grouping state
   const [filter, setFilter] = useState<'all' | 'active' | 'done' | 'error' | 'idle'>('all');
@@ -140,6 +145,15 @@ export default function Dashboard() {
     }
   };
 
+  const handleKillSelected = async () => {
+    if (selectedAgentIds.size === 0) return;
+    setKilling(true);
+    await Promise.all(Array.from(selectedAgentIds).map(id => fetch(`/api/agents/${id}`, { method: 'DELETE' })));
+    setSelectedAgentIds(new Set());
+    setKilling(false);
+    await fetchAgents();
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await fetch(`/api/agents/${id}?purge=1`, { method: 'DELETE' });
@@ -228,11 +242,22 @@ export default function Dashboard() {
     onResume: handleResume,
     agentTokens,
     allAgents: agents,
+    selectedAgentIds,
+    onToggleSelect: (id: string) => {
+      setSelectedAgentIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    },
   };
 
   const renderAgentGrid = (list: Agent[]) => (
     <AgentGrid agents={list} {...agentCardProps} />
   );
+
+  // Agents with depends_on set
+  const depsAgents = agents.filter(a => (a as any).depends_on?.length > 0);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950 text-zinc-100">
@@ -401,6 +426,43 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Dependency graph — shown inline below filter bar when any agent has deps */}
+          {depsAgents.length > 0 && (
+            <div className="mb-3 border border-zinc-800 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setShowDepGraph(d => !d)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 bg-zinc-900/40 hover:bg-zinc-900 transition-colors text-left"
+              >
+                {showDepGraph ? <ChevronDown className="w-3 h-3 text-zinc-600" /> : <ChevronRight className="w-3 h-3 text-zinc-600" />}
+                <span className="font-mono text-[10px] text-zinc-500">show deps ({depsAgents.length})</span>
+              </button>
+              {showDepGraph && (
+                <div className="px-3 py-2 font-mono text-[10px] space-y-0.5 bg-zinc-950/40">
+                  {depsAgents.map(a => (
+                    ((a as any).depends_on as string[]).map((depId: string) => {
+                      const depAgent = agents.find(x => x.id === depId);
+                      const depName = depAgent?.name ?? depId.slice(0, 8);
+                      return (
+                        <div key={`${depId}->${a.id}`} className="flex items-center gap-1.5 text-zinc-500">
+                          <span className="text-zinc-400">{depName}</span>
+                          <span className="text-zinc-700">→</span>
+                          <span className="text-zinc-300">{a.name}</span>
+                          {depAgent && (
+                            <span className={`ml-1 text-[9px] ${
+                              depAgent.status === 'done' ? 'text-emerald-600' :
+                              depAgent.status === 'running' ? 'text-emerald-400' :
+                              depAgent.status === 'error' ? 'text-red-400' : 'text-zinc-600'
+                            }`}>({depAgent.status})</span>
+                          )}
+                        </div>
+                      );
+                    })
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Saved presets */}
           {Object.keys(filterPresets).length > 0 && (
             <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -533,6 +595,26 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+      {/* Batch action floating bar */}
+      {selectedAgentIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-zinc-900 border-t border-zinc-700 rounded-lg shadow-2xl">
+          <span className="font-mono text-[11px] text-zinc-400">{selectedAgentIds.size} selected</span>
+          <button
+            onClick={handleKillSelected}
+            disabled={killing}
+            className="px-3 py-1 rounded text-[11px] font-mono bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 transition-colors"
+          >
+            {killing ? 'killing...' : `kill selected (${selectedAgentIds.size})`}
+          </button>
+          <button
+            onClick={() => setSelectedAgentIds(new Set())}
+            className="px-3 py-1 rounded text-[11px] font-mono bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+          >
+            clear selection
+          </button>
+        </div>
+      )}
 
       {/* Status bar */}
       <div className="flex-shrink-0 h-6 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between px-3 text-[9px] font-mono text-zinc-600">

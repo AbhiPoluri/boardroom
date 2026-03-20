@@ -27,6 +27,8 @@ interface AgentGridProps {
   onSpawn: () => void;
   onResume: (id: string, task: string) => void;
   agentTokens?: Record<string, TokenInfo>;
+  selectedAgentIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
 function formatTokens(n: number): string {
@@ -98,7 +100,7 @@ function useAgentLogs(agentId: string, active: boolean, terminalMode: boolean) {
   return logs;
 }
 
-function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }: { agent: Agent; onKill: (id: string) => void; onDelete: (id: string) => void; onResume: (id: string, task: string) => void; tokens?: TokenInfo; allAgents?: Agent[] }) {
+function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [], selected = false, onToggleSelect }: { agent: Agent; onKill: (id: string) => void; onDelete: (id: string) => void; onResume: (id: string, task: string) => void; tokens?: TokenInfo; allAgents?: Agent[]; selected?: boolean; onToggleSelect?: (id: string) => void }) {
   const router = useRouter();
   const [terminalMode, setTerminalMode] = useState(false);
   const [resumeMode, setResumeMode] = useState(false);
@@ -129,7 +131,9 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
 
   return (
     <div
-      className={`group relative flex flex-col bg-zinc-900 border ${borderColor} rounded-xl overflow-hidden transition-all duration-200 hover:border-zinc-600`}
+      className={`group relative flex flex-col bg-zinc-900 border rounded-xl overflow-hidden transition-all duration-200 ${
+        selected ? 'border-emerald-600' : `${borderColor} hover:border-zinc-600`
+      }`}
       style={{ height: cardHeight }}
     >
       {/* Active pulse */}
@@ -138,6 +142,22 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [] }
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
         </span>
+      )}
+
+      {/* Selection checkbox — visible on hover or when selected */}
+      {onToggleSelect && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(agent.id); }}
+          className={`absolute top-2 left-2 z-10 w-4 h-4 rounded border flex items-center justify-center transition-all ${
+            selected
+              ? 'bg-emerald-600 border-emerald-500 opacity-100'
+              : 'bg-zinc-800 border-zinc-600 opacity-0 group-hover:opacity-100'
+          }`}
+          title={selected ? 'Deselect' : 'Select'}
+          aria-label={selected ? 'Deselect agent' : 'Select agent'}
+        >
+          {selected && <span className="text-white text-[8px] leading-none">✓</span>}
+        </button>
       )}
 
       {/* Top controls (always visible) */}
@@ -359,14 +379,24 @@ function SpawnCard({ onSpawn }: { onSpawn: () => void }) {
   );
 }
 
-export function AgentGrid({ agents, onKill, onDelete, onSpawn, onResume, agentTokens, allAgents }: AgentGridProps & { allAgents?: Agent[] }) {
+export function AgentGrid({ agents, onKill, onDelete, onSpawn, onResume, agentTokens, allAgents, selectedAgentIds, onToggleSelect }: AgentGridProps & { allAgents?: Agent[] }) {
   return (
     <div
       className="grid gap-3 content-start"
       style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
     >
       {agents.map((agent) => (
-        <AgentCard key={agent.id} agent={agent} onKill={onKill} onDelete={onDelete} onResume={onResume} tokens={agentTokens?.[agent.id]} allAgents={allAgents || agents} />
+        <AgentCard
+          key={agent.id}
+          agent={agent}
+          onKill={onKill}
+          onDelete={onDelete}
+          onResume={onResume}
+          tokens={agentTokens?.[agent.id]}
+          allAgents={allAgents || agents}
+          selected={selectedAgentIds?.has(agent.id) ?? false}
+          onToggleSelect={onToggleSelect}
+        />
       ))}
       <SpawnCard onSpawn={onSpawn} />
     </div>

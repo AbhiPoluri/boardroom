@@ -199,12 +199,13 @@ export default function WorkspacePage() {
   // Derived: active file from openFiles + activeFileIdx
   const activeFile = openFiles[activeFileIdx] ?? null;
 
-  const [diffData, setDiffData] = useState<{ diff: string; stat?: string; commits?: string[]; branch?: string; base?: string; status?: string[]; staged?: string } | null>(null);
+  const [diffData, setDiffData] = useState<{ diff: string; stat?: string; commits?: string[]; branch?: string; base?: string; status?: string[]; staged?: string; behindBy?: number } | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
 
   const [pushRequests, setPushRequests] = useState<PushRequest[]>([]);
   const [selectedPR, setSelectedPR] = useState<PushRequest | null>(null);
   const [prDiff, setPrDiff] = useState<DiffFile[]>([]);
+  const [prBehindBy, setPrBehindBy] = useState<number>(0);
 
   const [spawnTask, setSpawnTask] = useState('');
   const [spawning, setSpawning] = useState(false);
@@ -254,6 +255,15 @@ export default function WorkspacePage() {
 
   // Mobile: file tree visibility
   const [showFileTree, setShowFileTree] = useState(true);
+
+  // Split view state
+  const [splitFileIdx, setSplitFileIdx] = useState<number | null>(null);
+
+  // Quick-spawn mini form
+  const [showQuickSpawn, setShowQuickSpawn] = useState(false);
+  const [quickSpawnTask, setQuickSpawnTask] = useState('');
+  const [quickSpawnModel, setQuickSpawnModel] = useState('claude-opus-4-5');
+  const [quickSpawning, setQuickSpawning] = useState(false);
 
   // Browse state
   const [browsing, setBrowsing] = useState(false);
@@ -377,13 +387,18 @@ export default function WorkspacePage() {
   }, [repo, fetchDir]);
 
   // Fetch file content — adds a new tab or switches to existing
+  // When split is active, clicking a file opens it in the right pane instead
   const openFile = async (filePath: string) => {
-    // If already open, just switch to it
+    // If already open, just switch to it (or set as split target)
     const existingIdx = openFiles.findIndex(f => f.path === filePath);
     if (existingIdx !== -1) {
-      setActiveFileIdx(existingIdx);
-      setEditedContent(null);
-      setIsEditing(false);
+      if (splitFileIdx !== null) {
+        setSplitFileIdx(existingIdx);
+      } else {
+        setActiveFileIdx(existingIdx);
+        setEditedContent(null);
+        setIsEditing(false);
+      }
       setActiveTab('code');
       return;
     }
@@ -392,11 +407,18 @@ export default function WorkspacePage() {
     if (data.content !== undefined) {
       setOpenFiles(prev => {
         const next = [...prev, { path: filePath, content: data.content, ext: data.extension }];
-        setActiveFileIdx(next.length - 1);
+        const newIdx = next.length - 1;
+        if (splitFileIdx !== null) {
+          setSplitFileIdx(newIdx);
+        } else {
+          setActiveFileIdx(newIdx);
+        }
         return next;
       });
-      setEditedContent(null);
-      setIsEditing(false);
+      if (splitFileIdx === null) {
+        setEditedContent(null);
+        setIsEditing(false);
+      }
       setActiveTab('code');
       setTimeout(() => codeViewerRef.current?.scrollTo(0, 0), 0);
     }
@@ -513,6 +535,7 @@ export default function WorkspacePage() {
   // View PR diff
   const viewPR = async (pr: PushRequest) => {
     setSelectedPR(pr);
+    setPrBehindBy(0);
     setActiveTab('prs');
     if (pr.agent_id) {
       // Get agent to find repo
@@ -521,8 +544,9 @@ export default function WorkspacePage() {
       const agentRepo = agentData.agent?.repo;
       if (agentRepo) {
         const diffRes = await fetch(`/api/diff?repo=${encodeURIComponent(agentRepo)}&branch=${encodeURIComponent(pr.branch)}&base=${encodeURIComponent(pr.base_branch)}`);
-        const diffData = await diffRes.json();
-        if (diffData.diff) setPrDiff(parseDiff(diffData.diff));
+        const diffJson = await diffRes.json();
+        if (diffJson.diff) setPrDiff(parseDiff(diffJson.diff));
+        if (typeof diffJson.behindBy === 'number') setPrBehindBy(diffJson.behindBy);
       }
     }
   };
@@ -537,6 +561,7 @@ export default function WorkspacePage() {
     fetchPRs();
     setSelectedPR(null);
     setPrDiff([]);
+    setPrBehindBy(0);
   };
 
   // View diff for current repo
@@ -564,6 +589,23 @@ export default function WorkspacePage() {
       setSpawnTask('');
     } catch {}
     setSpawning(false);
+  };
+
+  // Quick-spawn handler (from agent panel mini form)
+  const handleQuickSpawn = async () => {
+    if (!quickSpawnTask.trim() || !repo) return;
+    setQuickSpawning(true);
+    try {
+      await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: quickSpawnTask, type: 'claude', repo, useGitIsolation: true, model: quickSpawnModel }),
+      });
+      setQuickSpawnTask('');
+      setShowQuickSpawn(false);
+      fetchAgents();
+    } catch {}
+    setQuickSpawning(false);
   };
 
   // Agent terminal: fetch logs and start/stop polling
@@ -1057,7 +1099,7 @@ export default function WorkspacePage() {
               <span className="text-emerald-400">
                 {chatStatus} <span className="text-zinc-600">{chatElapsed}s</span>
               </span>
-            ) : 'orchestrator'}
+            ) : chatOpen ? 'orchestrator' : null}
           </button>
         </div>
       </div>
@@ -1091,13 +1133,13 @@ export default function WorkspacePage() {
             <div className="flex items-center gap-1 mb-1.5">
               <button
                 onClick={() => setSearchMode('files')}
-                className={`flex-1 py-0.5 rounded text-[9px] font-mono transition-colors ${searchMode === 'files' ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                className={`flex-1 py-0.5 rounded text-[9px] font-mono transition-colors ${searchMode === 'files' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
               >
                 files
               </button>
               <button
                 onClick={() => setSearchMode('semantic')}
-                className={`flex-1 py-0.5 rounded text-[9px] font-mono transition-colors flex items-center justify-center gap-0.5 ${searchMode === 'semantic' ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                className={`flex-1 py-0.5 rounded text-[9px] font-mono transition-colors flex items-center justify-center gap-0.5 ${searchMode === 'semantic' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
               >
                 <Sparkles className="w-2.5 h-2.5" /> semantic
               </button>
@@ -1323,6 +1365,22 @@ export default function WorkspacePage() {
                       )}
                       <button
                         onClick={() => {
+                          if (splitFileIdx !== null) {
+                            setSplitFileIdx(null);
+                          } else {
+                            setSplitFileIdx(activeFileIdx);
+                          }
+                        }}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono transition-colors ${
+                          splitFileIdx !== null ? 'bg-blue-700 text-blue-100' : 'text-zinc-500 hover:text-zinc-300 border border-zinc-700/50'
+                        }`}
+                        title={splitFileIdx !== null ? 'Close split view' : 'Split view'}
+                      >
+                        <span className="text-[8px]">⊟</span>
+                        {splitFileIdx !== null ? 'close split' : 'split'}
+                      </button>
+                      <button
+                        onClick={() => {
                           if (isEditing) {
                             setIsEditing(false);
                             setEditedContent(null);
@@ -1342,26 +1400,59 @@ export default function WorkspacePage() {
                     </div>
                   </div>
 
-                  {/* Content: textarea when editing, pre when read-only */}
-                  {isEditing ? (
-                    <textarea
-                      value={editedContent ?? activeFile.content}
-                      onChange={(e) => setEditedContent(e.target.value)}
-                      className="flex-1 w-full p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950 resize-none focus:outline-none border-0 h-full"
-                      spellCheck={false}
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                    />
-                  ) : (
-                    <pre ref={codeViewerRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
-                      {(editedContent ?? activeFile.content).split('\n').map((line, i) => (
-                        <div key={i} className="flex hover:bg-zinc-900/30">
-                          <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>
-                          <span className="whitespace-pre">{highlightLine(line, activeFile.ext)}</span>
+                  {/* Content: split view or single view */}
+                  <div className="flex flex-1 min-h-0 overflow-hidden">
+                    {/* Left pane (primary / edit pane) */}
+                    <div className={`flex flex-col ${splitFileIdx !== null ? 'w-1/2 border-r border-zinc-800' : 'flex-1'}`}>
+                      {isEditing ? (
+                        <textarea
+                          value={editedContent ?? activeFile.content}
+                          onChange={(e) => setEditedContent(e.target.value)}
+                          className="flex-1 w-full p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950 resize-none focus:outline-none border-0 h-full"
+                          spellCheck={false}
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                        />
+                      ) : (
+                        <pre ref={codeViewerRef} className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
+                          {(editedContent ?? activeFile.content).split('\n').map((line, i) => (
+                            <div key={i} className="flex hover:bg-zinc-900/30">
+                              <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>
+                              <span className="whitespace-pre">{highlightLine(line, activeFile.ext)}</span>
+                            </div>
+                          ))}
+                        </pre>
+                      )}
+                    </div>
+
+                    {/* Right pane (split view) */}
+                    {splitFileIdx !== null && (() => {
+                      const splitFile = openFiles[splitFileIdx] ?? null;
+                      if (!splitFile) return null;
+                      return (
+                        <div className="w-1/2 flex flex-col">
+                          <div className="flex items-center gap-1.5 px-3 py-1 border-b border-zinc-800 bg-zinc-900/20 flex-shrink-0">
+                            <span className="font-mono text-[9px] text-zinc-500 truncate flex-1">{splitFile.path.split('/').pop()}</span>
+                            <button
+                              onClick={() => setSplitFileIdx(null)}
+                              className="text-zinc-700 hover:text-zinc-400"
+                              aria-label="Close split"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <pre className="flex-1 overflow-auto p-4 font-mono text-[11px] text-zinc-300 leading-5 bg-zinc-950">
+                            {splitFile.content.split('\n').map((line, i) => (
+                              <div key={i} className="flex hover:bg-zinc-900/30">
+                                <span className="inline-block w-10 text-right pr-4 text-zinc-700 select-none flex-shrink-0">{i + 1}</span>
+                                <span className="whitespace-pre">{highlightLine(line, splitFile.ext)}</span>
+                              </div>
+                            ))}
+                          </pre>
                         </div>
-                      ))}
-                    </pre>
-                  )}
+                      );
+                    })()}
+                  </div>
                 </>
               ) : (
                 <div className="flex-1 flex items-center justify-center h-full">
@@ -1443,6 +1534,11 @@ export default function WorkspacePage() {
                     <div className="font-mono text-xs text-zinc-200">{selectedPR.agent_name}</div>
                     <div className="font-mono text-[9px] text-zinc-500">{selectedPR.branch} → {selectedPR.base_branch}</div>
                   </div>
+                  {prBehindBy > 0 && (
+                    <span className="flex items-center gap-1 text-[9px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/25 rounded px-2 py-0.5">
+                      ⚠ {prBehindBy} commit{prBehindBy !== 1 ? 's' : ''} behind {selectedPR.base_branch} — may have conflicts
+                    </span>
+                  )}
                   <Badge variant="outline" className={`ml-auto text-[9px] font-mono ${
                     selectedPR.status === 'pending' ? 'text-amber-400 border-amber-500/25'
                       : selectedPR.status === 'approved' ? 'text-emerald-400 border-emerald-500/25'
@@ -1508,7 +1604,7 @@ export default function WorkspacePage() {
 
         {/* Right panel: agent cards */}
         {showAgents && (
-          <div className="hidden md:flex w-[260px] flex-shrink-0 border-l border-zinc-800 overflow-y-auto bg-zinc-950/30 flex-col">
+          <div className="hidden md:flex w-[260px] flex-shrink-0 border-l border-zinc-800 overflow-y-auto bg-zinc-950/30 flex-col relative">
             <div className="flex items-center justify-between px-3 py-2">
               <div className="flex items-center gap-1.5">
                 <Bot className="w-3 h-3 text-zinc-600" />
@@ -1517,10 +1613,51 @@ export default function WorkspacePage() {
                   {agents.filter(a => a.status === 'running' || a.status === 'spawning').length} active
                 </Badge>
               </div>
-              <button onClick={() => setShowAgents(false)} className="text-zinc-700 hover:text-zinc-400" aria-label="Close agents panel">
-                <X className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowQuickSpawn(s => !s)}
+                  className={`p-0.5 rounded transition-colors ${showQuickSpawn ? 'text-emerald-400 bg-emerald-950/50' : 'text-zinc-600 hover:text-zinc-300'}`}
+                  title="Quick spawn agent"
+                  aria-label="Quick spawn"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => setShowAgents(false)} className="text-zinc-700 hover:text-zinc-400" aria-label="Close agents panel">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
             </div>
+
+            {/* Quick-spawn mini form */}
+            {showQuickSpawn && (
+              <div className="mx-2 mb-2 p-2 rounded-lg border border-zinc-800 bg-zinc-900/60 space-y-1.5">
+                <textarea
+                  value={quickSpawnTask}
+                  onChange={(e) => setQuickSpawnTask(e.target.value)}
+                  placeholder="task description..."
+                  rows={2}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] font-mono text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-600 resize-none"
+                />
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={quickSpawnModel}
+                    onChange={(e) => setQuickSpawnModel(e.target.value)}
+                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-[9px] font-mono text-zinc-400 focus:outline-none"
+                  >
+                    <option value="claude-opus-4-5">opus-4-5</option>
+                    <option value="claude-sonnet-4-5">sonnet-4-5</option>
+                    <option value="claude-haiku-4-5">haiku-4-5</option>
+                  </select>
+                  <button
+                    onClick={handleQuickSpawn}
+                    disabled={!quickSpawnTask.trim() || quickSpawning}
+                    className="px-2 py-0.5 rounded text-[9px] font-mono bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-colors"
+                  >
+                    {quickSpawning ? 'spawning...' : 'spawn'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Repo agents first */}
             {(() => {
@@ -1608,6 +1745,7 @@ export default function WorkspacePage() {
                 </>
               );
             })()}
+            <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-zinc-950/90 to-transparent pointer-events-none" />
           </div>
         )}
 

@@ -30,7 +30,17 @@ export async function GET(req: NextRequest) {
         { encoding: 'utf-8', stdio: 'pipe' }
       ).trim();
 
-      return NextResponse.json({ diff: fullDiff, stat: diff, commits: commits.split('\n').filter(Boolean), branch, base });
+      // How many commits the branch is behind base
+      let behindBy = 0;
+      try {
+        const behindRaw = execSync(
+          `git -C "${repo}" log ${branch}..${base} --oneline --no-color | wc -l`,
+          { encoding: 'utf-8', stdio: 'pipe' }
+        ).trim();
+        behindBy = parseInt(behindRaw, 10) || 0;
+      } catch {}
+
+      return NextResponse.json({ diff: fullDiff, stat: diff, commits: commits.split('\n').filter(Boolean), branch, base, behindBy });
     }
 
     // Otherwise, show working directory changes
