@@ -262,7 +262,7 @@ export default function WorkspacePage() {
   // Quick-spawn mini form
   const [showQuickSpawn, setShowQuickSpawn] = useState(false);
   const [quickSpawnTask, setQuickSpawnTask] = useState('');
-  const [quickSpawnModel, setQuickSpawnModel] = useState('claude-opus-4-5');
+  const [quickSpawnModel, setQuickSpawnModel] = useState('sonnet');
   const [quickSpawning, setQuickSpawning] = useState(false);
 
   // Browse state
@@ -1644,9 +1644,9 @@ export default function WorkspacePage() {
                     onChange={(e) => setQuickSpawnModel(e.target.value)}
                     className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-[9px] font-mono text-zinc-400 focus:outline-none"
                   >
-                    <option value="claude-opus-4-5">opus-4-5</option>
-                    <option value="claude-sonnet-4-5">sonnet-4-5</option>
-                    <option value="claude-haiku-4-5">haiku-4-5</option>
+                    <option value="sonnet">sonnet</option>
+                    <option value="haiku">haiku</option>
+                    <option value="opus">opus</option>
                   </select>
                   <button
                     onClick={handleQuickSpawn}
