@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
-import { createPushRequest, getPushRequests, getPushRequest, updatePushRequest, getPendingPushRequestsCount, getAgentById, createNotification } from '@/lib/db';
+import { createPushRequest, getPushRequests, getPushRequest, updatePushRequest, getPendingPushRequestsCount, getAgentById, createNotification, createAgent } from '@/lib/db';
 import { getWorktreeGitInfo, getWorktreeDiff, mergeWorktreeBranch } from '@/lib/worktree';
+import { spawnAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
 
 export const dynamic = 'force-dynamic';
@@ -100,6 +101,15 @@ export async function PATCH(req: NextRequest) {
     if (agent?.repo) {
       const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch);
       if (!result.success) {
+        if (result.needsAgent && result.conflictFiles) {
+          // Auto-spawn resolver agent
+          const resolverId = uuidv4();
+          const conflictList = result.conflictFiles.join(', ');
+          const resolveTask = `Resolve merge conflicts in ${agent.repo}. Branch ${pr.branch} conflicts with ${pr.base_branch} in: ${conflictList}. Steps: 1) git checkout ${pr.base_branch}, 2) git merge ${pr.branch} --no-ff, 3) Resolve all conflict markers by combining both versions, 4) git add resolved files, 5) git commit. Do NOT delete code — combine both.`;
+          createAgent({ id: resolverId, name: 'merge-resolver', type: 'claude', status: 'spawning', task: resolveTask, repo: agent.repo, worktree_path: null, pid: null, port: null, created_at: Date.now() });
+          spawnAgent({ agentId: resolverId, task: resolveTask, type: 'claude', name: 'merge-resolver', repo: agent.repo, model: 'sonnet', useGitIsolation: false }).catch(() => {});
+          return Response.json({ conflict: true, message: `Merge conflict in ${conflictList}. Spawned merge-resolver agent to resolve.`, resolver: resolverId.slice(0,8) });
+        }
         return Response.json({ error: `Merge failed: ${result.message}` }, { status: 500 });
       }
     }

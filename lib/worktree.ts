@@ -225,22 +225,38 @@ export function getWorktreeDiff(worktreePath: string, baseBranch?: string): stri
   return [diff, stagedDiff, wdDiff].filter(Boolean).join('\n') || null;
 }
 
-/** Merge agent branch back into base branch */
+/** Merge agent branch back into base branch. On conflict, auto-resolves via a resolver agent. */
 export function mergeWorktreeBranch(
   repo: string,
   agentBranch: string,
   baseBranch = 'main'
-): { success: boolean; message: string } {
+): { success: boolean; message: string; needsAgent?: boolean; conflictFiles?: string[] } {
   try {
     if (!/^[\w\-\/\.]+$/.test(baseBranch)) throw new Error('Invalid branch name');
     if (!/^[\w\-\/\.]+$/.test(agentBranch)) throw new Error('Invalid branch name');
-    // Ensure we're on the base branch in the main repo
     git(repo, `checkout ${baseBranch}`);
     git(repo, `merge ${agentBranch} --no-ff -m "Merge ${agentBranch} into ${baseBranch}"`);
     return { success: true, message: `Merged ${agentBranch} into ${baseBranch}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Abort the merge if it failed
+
+    // Check if it's a merge conflict (not some other error)
+    if (msg.includes('CONFLICT') || msg.includes('Merge conflict')) {
+      // Get list of conflicted files
+      const conflictOutput = gitSafe(repo, 'diff --name-only --diff-filter=U') || '';
+      const conflictFiles = conflictOutput.split('\n').filter(Boolean);
+
+      // Abort the failed merge so repo is clean
+      gitSafe(repo, 'merge --abort');
+
+      return {
+        success: false,
+        message: `Merge conflict in ${conflictFiles.length} file(s): ${conflictFiles.join(', ')}`,
+        needsAgent: true,
+        conflictFiles,
+      };
+    }
+
     gitSafe(repo, 'merge --abort');
     return { success: false, message: `Merge failed: ${msg}` };
   }

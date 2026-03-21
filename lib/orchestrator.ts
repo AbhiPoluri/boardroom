@@ -262,7 +262,22 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         if (agent?.repo) {
           const { mergeWorktreeBranch } = await import('@/lib/worktree');
           const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch);
-          if (!result.success) return { error: `Merge failed: ${result.message}` };
+          if (!result.success) {
+            if (result.needsAgent && result.conflictFiles) {
+              // Auto-spawn a resolver agent to handle merge conflicts
+              const resolverId = uuidv4();
+              const resolverName = `merge-resolver`;
+              const conflictList = result.conflictFiles.join(', ');
+              const resolveTask = `Resolve merge conflicts in ${agent.repo}. The branch ${pr.branch} conflicts with ${pr.base_branch} in these files: ${conflictList}. Steps: 1) git checkout ${pr.base_branch}, 2) git merge ${pr.branch} --no-ff, 3) For each conflicted file, read it, resolve the conflict markers (<<<<<<< ======= >>>>>>>) by keeping BOTH sets of changes intelligently combined, 4) git add the resolved files, 5) git commit -m "merge: resolve conflicts for ${pr.branch} into ${pr.base_branch}". Do NOT delete any code — combine both versions.`;
+              createAgent({
+                id: resolverId, name: resolverName, type: 'claude', status: 'spawning',
+                task: resolveTask, repo: agent.repo, worktree_path: null, pid: null, port: null, created_at: Date.now(),
+              });
+              await spawnAgent({ agentId: resolverId, task: resolveTask, type: 'claude', name: resolverName, repo: agent.repo, model: 'sonnet', useGitIsolation: false });
+              return { id, status: 'conflict', message: `Merge conflict in ${conflictList}. Spawned merge-resolver agent (${resolverId.slice(0,8)}) to resolve automatically.`, resolver: resolverId.slice(0,8) };
+            }
+            return { error: `Merge failed: ${result.message}` };
+          }
         }
         updatePushRequest(id, 'approved', comment);
         createNotification('push_approved', `Push approved: ${pr.agent_name}`, comment || `${pr.branch} → ${pr.base_branch}`, pr.agent_id);
