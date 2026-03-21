@@ -2,22 +2,28 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
+function formatNum(n: number, decimals = false): string {
+  if (decimals) return n.toFixed(4);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return Math.round(n).toString();
+}
+
+function AnimatedNumber({ value, prefix = '', suffix = '', decimals = false }: { value: number; prefix?: string; suffix?: string; decimals?: boolean }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
     const duration = 600;
     const start = Date.now();
-    const from = 0;
     const tick = () => {
       const elapsed = Date.now() - start;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplay(from + (value - from) * eased);
+      setDisplay(value * eased);
       if (progress < 1) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }, [value]);
-  return <>{prefix}{typeof value === 'number' && value % 1 !== 0 ? display.toFixed(4) : Math.round(display)}{suffix}</>;
+  return <>{prefix}{formatNum(display, decimals)}{suffix}</>;
 }
 
 function Skeleton({ className = '' }: { className?: string }) {
@@ -315,7 +321,7 @@ export default function Dashboard() {
                 <span>
                   <span className="text-zinc-400 font-light">cost </span>
                   <span className="text-green-400 font-medium">
-                    <AnimatedNumber value={tokens.cost_usd} prefix="$" />
+                    <AnimatedNumber value={tokens.cost_usd} prefix="$" decimals />
                   </span>
                 </span>
               )}
