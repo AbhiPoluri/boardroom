@@ -263,6 +263,7 @@ export default function WorkspacePage() {
   const [showQuickSpawn, setShowQuickSpawn] = useState(false);
   const [quickSpawnTask, setQuickSpawnTask] = useState('');
   const [quickSpawnModel, setQuickSpawnModel] = useState('sonnet');
+  const [quickSpawnType, setQuickSpawnType] = useState('claude');
   const [quickSpawning, setQuickSpawning] = useState(false);
 
   // Browse state
@@ -599,7 +600,7 @@ export default function WorkspacePage() {
       await fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: quickSpawnTask, type: 'claude', repo, useGitIsolation: true, model: quickSpawnModel }),
+        body: JSON.stringify({ task: quickSpawnTask, type: quickSpawnType, repo, useGitIsolation: true, model: quickSpawnModel }),
       });
       setQuickSpawnTask('');
       setShowQuickSpawn(false);
@@ -1640,9 +1641,20 @@ export default function WorkspacePage() {
                 />
                 <div className="flex items-center gap-1.5">
                   <select
+                    value={quickSpawnType}
+                    onChange={(e) => setQuickSpawnType(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-[9px] font-mono text-zinc-400 focus:outline-none"
+                  >
+                    <option value="claude">claude</option>
+                    <option value="codex">codex</option>
+                    <option value="opencode">opencode</option>
+                    <option value="custom">custom</option>
+                    <option value="test">test</option>
+                  </select>
+                  <select
                     value={quickSpawnModel}
                     onChange={(e) => setQuickSpawnModel(e.target.value)}
-                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-[9px] font-mono text-zinc-400 focus:outline-none"
+                    className="bg-zinc-950 border border-zinc-800 rounded px-1 py-0.5 text-[9px] font-mono text-zinc-400 focus:outline-none"
                   >
                     <option value="sonnet">sonnet</option>
                     <option value="haiku">haiku</option>
