@@ -463,10 +463,20 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
       });
     }
 
-    // Extract JSON — claude might wrap in markdown code blocks
-    const rawOutput = cli.text;
-    const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)```/) || rawOutput.match(/(\{[\s\S]*\})/);
-    const jsonStr = jsonMatch ? jsonMatch[1] : rawOutput;
+    // Extract JSON — claude might wrap in markdown code blocks or return raw
+    let rawOutput = cli.text;
+
+    // Strip markdown code blocks if present
+    const codeBlockMatch = rawOutput.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (codeBlockMatch) rawOutput = codeBlockMatch[1];
+
+    // Find the outermost JSON object
+    const firstBrace = rawOutput.indexOf('{');
+    const lastBrace = rawOutput.lastIndexOf('}');
+    const jsonStr = firstBrace >= 0 && lastBrace > firstBrace
+      ? rawOutput.slice(firstBrace, lastBrace + 1)
+      : rawOutput;
+
     try {
       parsed = JSON.parse(jsonStr.trim());
     } catch {
