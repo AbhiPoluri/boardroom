@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { SubNav } from '@/components/SubNav';
 import {
   RefreshCw, Download, ChevronsDown,
   Search, X, Filter, ScrollText,
@@ -224,6 +225,7 @@ export default function LogsPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
+          <SubNav tabs={[{ label: 'agents', href: '/', active: false }, { label: 'logs', href: '/logs', active: true }]} />
           <h1 className="font-mono text-sm text-zinc-100">logs</h1>
           {stats && (
             <span className="text-[10px] font-mono text-zinc-600">{stats.total.toLocaleString()} total</span>

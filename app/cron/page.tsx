@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Clock, Play, Pause, Trash2, Edit2, RotateCcw, Calendar, X, Check, FileText, ChevronDown, ChevronRight } from 'lucide-react';
+import { SubNav } from '@/components/SubNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -362,6 +363,7 @@ export default function CronPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
+          <SubNav tabs={[{ label: 'workflows', href: '/workflows', active: false }, { label: 'cron', href: '/cron', active: true }]} />
           <h1 className="font-mono text-sm text-zinc-100">cron jobs</h1>
           {jobs.length > 0 && (
             <span className="text-[10px] font-mono text-zinc-600">{jobs.length} job{jobs.length !== 1 ? 's' : ''}</span>

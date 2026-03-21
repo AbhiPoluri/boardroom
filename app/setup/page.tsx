@@ -9,6 +9,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { SubNav } from '@/components/SubNav';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -180,6 +181,7 @@ export default function SetupPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
+          <SubNav tabs={[{ label: 'setup', href: '/setup', active: true }, { label: 'api', href: '/api-docs', active: false }, { label: 'branches', href: '/branches', active: false }]} />
           <Wrench className="w-3.5 h-3.5 text-zinc-400" />
           <h1 className="font-mono text-sm text-zinc-100">setup &amp; quickstart</h1>
           <Separator orientation="vertical" className="h-4" />

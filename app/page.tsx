@@ -10,6 +10,7 @@ import {
   Folder, BarChart3, Terminal as TerminalIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import { SubNav } from '@/components/SubNav';
 import { NotificationBell } from '@/components/NotificationBell';
 import { MergePanel } from '@/components/MergePanel';
 import { DependencyGraph } from '@/components/DependencyGraph';
@@ -265,6 +266,7 @@ export default function Dashboard() {
         {/* Header */}
         <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
           <div className="flex items-center gap-3">
+            <SubNav tabs={[{ label: 'agents', href: '/', active: true }, { label: 'logs', href: '/logs', active: false }]} />
             <h1 className="font-mono text-sm text-zinc-100">agent fleet</h1>
             <span
               className={`inline-block h-2 w-2 rounded-full ${

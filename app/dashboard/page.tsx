@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Settings } from 'lucide-react';
+import { SubNav } from '@/components/SubNav';
 import type { Agent, PushRequest } from '@/types';
 
 // ─── widget definitions ───────────────────────────────────────────────────────
@@ -381,7 +382,10 @@ export default function DashboardPage() {
     <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950 text-zinc-100">
       {/* Header */}
       <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
-        <h1 className="font-mono text-sm text-zinc-100">dashboard</h1>
+        <div className="flex items-center gap-3">
+          <SubNav tabs={[{ label: 'overview', href: '/dashboard', active: true }, { label: 'costs', href: '/costs', active: false }]} />
+          <h1 className="font-mono text-sm text-zinc-100">dashboard</h1>
+        </div>
         <button
           onClick={() => setSettingsOpen(s => !s)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-mono transition-colors ${

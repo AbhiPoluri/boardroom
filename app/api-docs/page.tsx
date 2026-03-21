@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { SubNav } from '@/components/SubNav';
 
 interface Endpoint {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -715,6 +716,7 @@ export default function ApiDocsPage() {
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
+          <SubNav tabs={[{ label: 'setup', href: '/setup', active: false }, { label: 'api', href: '/api-docs', active: true }, { label: 'branches', href: '/branches', active: false }]} />
           <h1 className="font-mono text-sm text-zinc-100">api reference</h1>
           <Separator orientation="vertical" className="h-4" />
           <span className="text-[11px] font-mono text-zinc-500">{totalEndpoints} endpoints</span>

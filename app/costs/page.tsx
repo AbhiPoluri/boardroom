@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Zap, TrendingUp, Lightbulb, DollarSign } from 'lucide-react';
+import { SubNav } from '@/components/SubNav';
 import { CostChart } from '@/components/CostChart';
 
 interface TokenEntry {
@@ -113,7 +114,10 @@ export default function CostsPage() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
-        <h1 className="font-mono text-sm text-zinc-100">cost dashboard</h1>
+        <div className="flex items-center gap-3">
+          <SubNav tabs={[{ label: 'overview', href: '/dashboard', active: false }, { label: 'costs', href: '/costs', active: true }]} />
+          <h1 className="font-mono text-sm text-zinc-100">cost dashboard</h1>
+        </div>
         <div className="flex items-center gap-4">
           {/* Time filter */}
           <div className="flex items-center gap-1">

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { SubNav } from '@/components/SubNav';
 import CronPicker from '@/components/CronPicker';
 import WorkflowCanvas from '@/components/WorkflowCanvas';
 import { describeCron } from '@/lib/cron-utils';
@@ -484,7 +485,8 @@ export default function WorkflowsPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
-          <h1 className="font-mono text-sm text-zinc-100">workflows</h1>
+          <SubNav tabs={[{ label: 'workflows', href: '/workflows', active: true }, { label: 'cron', href: '/cron', active: false }]} />
+          <h1 className="font-mono text-sm text-zinc-100">pipelines</h1>
           {viewedRun ? (
             <>
               <Separator orientation="vertical" className="h-4" />

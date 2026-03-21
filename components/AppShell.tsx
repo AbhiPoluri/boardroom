@@ -6,9 +6,9 @@ import Link from 'next/link';
 import { ChatBox } from '@/components/ChatBox';
 import { PtyTerminal } from '@/components/PtyTerminal';
 import {
-  Terminal, PanelLeftClose, FileText, DollarSign,
-  Workflow, Clock, ScrollText, Home, Code2, GitBranch,
-  GripHorizontal, Zap, SquareCode, Plus, Search, Wrench,
+  Terminal, PanelLeftClose, FileText,
+  Workflow, Home,
+  GripHorizontal, SquareCode, Plus, Search, Wrench,
   LayoutDashboard,
 } from 'lucide-react';
 
@@ -16,21 +16,14 @@ const NAV_ITEMS = [
   { href: '/workspace', icon: SquareCode, label: 'workspace' },
   { href: '/', icon: Home, label: 'fleet' },
   { href: '/dashboard', icon: LayoutDashboard, label: 'dashboard' },
-  { href: '/configs', icon: FileText, label: 'personas' },
-  { href: '/skills', icon: Zap, label: 'skills' },
-  { href: '/costs', icon: DollarSign, label: 'costs' },
-  { href: '/workflows', icon: Workflow, label: 'workflows' },
-  { href: '/branches', icon: GitBranch, label: 'branches' },
-  { href: '/cron', icon: Clock, label: 'cron' },
-  { href: '/logs', icon: ScrollText, label: 'logs' },
-  { href: '/api-docs', icon: Code2, label: 'api' },
-  { href: '/setup', icon: Wrench, label: 'setup' },
+  { href: '/workflows', icon: Workflow, label: 'pipelines' },
+  { href: '/configs', icon: FileText, label: 'library' },
+  { href: '/settings', icon: Wrench, label: 'settings' },
 ];
 
 const QUICK_ACTIONS = [
   { label: 'spawn with persona', hint: 'new', href: '/configs?new=1', icon: Plus },
   { label: 'new workflow', hint: 'new', href: '/workflows?new=1', icon: Plus },
-  { label: 'new skill', hint: 'new', href: '/skills?new=1', icon: Plus },
   { label: 'new cron job', hint: 'new', href: '/cron?new=1', icon: Plus },
 ];
 
@@ -212,7 +205,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-1 px-4 py-2 flex-shrink-0">
             <span className="font-mono text-xs font-bold text-zinc-300 mr-3 tracking-tight">boardroom</span>
             {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-              const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
+              const active = href === '/'
+                ? pathname === '/' || pathname.startsWith('/logs')
+                : href === '/workflows'
+                ? pathname.startsWith('/workflows') || pathname.startsWith('/cron')
+                : href === '/configs'
+                ? pathname.startsWith('/configs') || pathname.startsWith('/skills')
+                : href === '/settings'
+                ? pathname.startsWith('/settings') || pathname.startsWith('/setup') || pathname.startsWith('/api-docs') || pathname.startsWith('/branches')
+                : pathname.startsWith(href);
               return (
                 <Link
                   key={href}
