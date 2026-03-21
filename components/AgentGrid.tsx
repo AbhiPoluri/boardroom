@@ -132,7 +132,7 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [], 
 
   return (
     <div
-      className={`group relative flex flex-col bg-zinc-900 border rounded-xl overflow-hidden transition-all duration-200 ${
+      className={`group relative flex flex-col bg-zinc-900 border rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] ${
         selected ? 'border-emerald-600' : `${borderColor} hover:border-zinc-600`
       }`}
       style={{ height: cardHeight }}

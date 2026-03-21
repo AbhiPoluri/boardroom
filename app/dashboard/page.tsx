@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+
+function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse bg-zinc-800 rounded ${className}`} />;
+}
 import { RefreshCw, Settings } from 'lucide-react';
 import { SubNav } from '@/components/SubNav';
 import type { Agent, PushRequest } from '@/types';
@@ -91,7 +95,12 @@ function ActiveAgentsWidget() {
   return (
     <WidgetCard title="active agents" onRefresh={fetch_}>
       {loading ? (
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading...</p>
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-12 rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-4 w-3/4 rounded" />
+          <Skeleton className="h-4 w-5/6 rounded" />
+        </div>
       ) : agents.length === 0 ? (
         <p className="font-mono text-xs text-zinc-600">no active agents</p>
       ) : (
@@ -131,7 +140,12 @@ function SessionCostWidget() {
   return (
     <WidgetCard title="session cost" onRefresh={fetch_}>
       {loading ? (
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading...</p>
+        <div className="space-y-3">
+          <Skeleton className="h-8 w-28 rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-1.5 w-full rounded-full" />
+          <Skeleton className="h-3 w-1/2 rounded" />
+        </div>
       ) : !data ? (
         <p className="font-mono text-xs text-zinc-600">no data</p>
       ) : (
@@ -182,7 +196,14 @@ function RecentPRsWidget() {
   return (
     <WidgetCard title="recent PRs" onRefresh={fetch_}>
       {loading ? (
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading...</p>
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Skeleton className="h-5 w-16 rounded" />
+              <Skeleton className="h-4 flex-1 rounded" />
+            </div>
+          ))}
+        </div>
       ) : prs.length === 0 ? (
         <p className="font-mono text-xs text-zinc-600">no push requests</p>
       ) : (
@@ -228,7 +249,14 @@ function TokenVelocityWidget() {
   return (
     <WidgetCard title="token velocity" onRefresh={fetch_}>
       {loading ? (
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading...</p>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <Skeleton className="h-4 w-8 rounded" />
+              <Skeleton className="h-4 w-16 rounded" />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-3">
           {windows.map(w => {
@@ -273,7 +301,15 @@ function AgentTimelineWidget() {
   return (
     <WidgetCard title="agent timeline" onRefresh={fetch_}>
       {loading ? (
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading...</p>
+        <div className="space-y-1.5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Skeleton className="h-2 w-2 rounded-full flex-shrink-0" />
+              <Skeleton className="h-4 flex-1 rounded" />
+              <Skeleton className="h-4 w-12 rounded flex-shrink-0" />
+            </div>
+          ))}
+        </div>
       ) : agents.length === 0 ? (
         <p className="font-mono text-xs text-zinc-600">no agents</p>
       ) : (
@@ -312,7 +348,15 @@ function WorkflowRunsWidget() {
   return (
     <WidgetCard title="workflow runs" onRefresh={fetch_}>
       {loading ? (
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading...</p>
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Skeleton className="h-4 w-16 rounded flex-shrink-0" />
+              <Skeleton className="h-4 flex-1 rounded" />
+              <Skeleton className="h-4 w-10 rounded flex-shrink-0" />
+            </div>
+          ))}
+        </div>
       ) : runs.length === 0 ? (
         <p className="font-mono text-xs text-zinc-600">no workflow runs</p>
       ) : (
@@ -372,8 +416,12 @@ export default function DashboardPage() {
 
   if (!mounted) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-zinc-950">
-        <p className="font-mono text-xs text-zinc-600 animate-pulse">loading dashboard...</p>
+      <div className="flex-1 overflow-y-auto p-6 bg-zinc-950">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[200px] rounded-lg" />
+          ))}
+        </div>
       </div>
     );
   }

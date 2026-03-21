@@ -130,7 +130,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-[#0a0a0a]">
+    <div className="noise-bg h-screen flex overflow-hidden bg-[#0a0a0a]">
       {/* Left: persistent orchestrator chat (collapsible) — hidden on workspace (has its own), hidden on mobile */}
       {pathname === '/workspace' ? null : chatOpen ? (
         <div ref={panelRef} className="hidden md:flex w-[420px] flex-shrink-0 border-r border-zinc-800 h-full flex-col">
@@ -219,9 +219,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   key={href}
                   href={href}
                   aria-label={label}
-                  className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors flex-shrink-0 ${
+                  className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-all duration-200 hover:scale-[1.02] flex-shrink-0 ${
                     active
-                      ? 'bg-zinc-800 text-zinc-100'
+                      ? 'bg-zinc-800 text-zinc-100 shadow-[0_0_12px_rgba(52,211,153,0.15)]'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
                   }`}
                 >
@@ -242,7 +242,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Page content */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden animate-fade-in">
           {children}
         </div>
       </div>
@@ -257,7 +257,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           {/* Palette */}
           <div
-            className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             {/* Search input */}

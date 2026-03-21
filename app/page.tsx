@@ -1,6 +1,28 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+
+function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    const duration = 600;
+    const start = Date.now();
+    const from = 0;
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(from + (value - from) * eased);
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [value]);
+  return <>{prefix}{typeof value === 'number' && value % 1 !== 0 ? display.toFixed(4) : Math.round(display)}{suffix}</>;
+}
+
+function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse bg-zinc-800 rounded ${className}`} />;
+}
 import { AgentGrid } from '@/components/AgentGrid';
 import { SpawnModal } from '@/components/SpawnModal';
 import { Button } from '@/components/ui/button';
@@ -267,7 +289,7 @@ export default function Dashboard() {
         <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
           <div className="flex items-center gap-3">
             <SubNav tabs={[{ label: 'agents', href: '/', active: true }, { label: 'logs', href: '/logs', active: false }]} />
-            <h1 className="font-mono text-sm text-zinc-100">agent fleet</h1>
+            <h1 className="font-mono text-base font-semibold tracking-tight text-zinc-100">agent fleet</h1>
             <span
               className={`inline-block h-2 w-2 rounded-full ${
                 hasActive ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-700'
@@ -275,19 +297,31 @@ export default function Dashboard() {
               title={hasActive ? 'Agents active' : 'No active agents'}
               role="status"
             />
+            <span className="w-px h-3.5 bg-zinc-700" />
             <div className="flex items-center gap-3 text-[11px] font-mono">
-              <span className={stats.active > 0 ? 'text-emerald-400' : 'text-zinc-600'}>
-                {stats.active} active
+              <span>
+                <span className="text-zinc-400 font-light">active </span>
+                <span className={`font-medium ${stats.active > 0 ? 'text-emerald-400' : 'text-zinc-100'}`}>
+                  {stats.active}
+                </span>
               </span>
-              <span className={stats.pending_tasks > 0 ? 'text-amber-400' : 'text-zinc-600'}>
-                {stats.pending_tasks} pending
+              <span>
+                <span className="text-zinc-400 font-light">pending </span>
+                <span className={`font-medium ${stats.pending_tasks > 0 ? 'text-amber-400' : 'text-zinc-100'}`}>
+                  {stats.pending_tasks}
+                </span>
               </span>
               {tokens.cost_usd > 0 && (
-                <span className="text-green-400">${tokens.cost_usd.toFixed(4)}</span>
+                <span>
+                  <span className="text-zinc-400 font-light">cost </span>
+                  <span className="text-green-400 font-medium">
+                    <AnimatedNumber value={tokens.cost_usd} prefix="$" />
+                  </span>
+                </span>
               )}
               {tokens.total_tokens > 0 && (
-                <span className="text-blue-400 flex items-center gap-1.5">
-                  {formatTokens(tokens.total_tokens)} tok
+                <span className="text-blue-400 flex items-center gap-1.5 font-medium">
+                  <AnimatedNumber value={tokens.total_tokens} suffix=" tok" />
                   {velocity.length > 0 && <Sparkline data={velocity} width={60} height={16} color="#60a5fa" animate={hasActive} />}
                 </span>
               )}
@@ -509,7 +543,11 @@ export default function Dashboard() {
           )}
 
           {loading ? (
-            <div className="text-center py-16 text-zinc-700 font-mono text-sm animate-pulse">loading...</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-[220px] rounded-xl" />
+              ))}
+            </div>
           ) : filteredAgents.length === 0 && agents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <TerminalIcon className="w-10 h-10 text-zinc-800 mb-4" />
