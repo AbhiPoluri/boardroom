@@ -479,9 +479,17 @@ ${recentHistory ? `Recent conversation:\n${recentHistory}\n` : ''}User: ${userMe
     return;
   }
 
-  // Emit the reply text
+  // Emit the reply text — guard against double-wrapped JSON
   if (parsed.reply) {
-    yield { type: 'text', content: parsed.reply };
+    let reply = parsed.reply;
+    // If reply is itself a JSON string, extract the inner reply
+    if (typeof reply === 'string' && reply.trim().startsWith('{') && reply.includes('"reply"')) {
+      try {
+        const inner = JSON.parse(reply.trim());
+        if (inner.reply) { reply = inner.reply; parsed.actions = inner.actions || parsed.actions; }
+      } catch {}
+    }
+    yield { type: 'text', content: reply };
   }
 
   // Execute actions
