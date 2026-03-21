@@ -9,11 +9,13 @@ import {
   Terminal, PanelLeftClose, FileText, DollarSign,
   Workflow, Clock, ScrollText, Home, Code2, GitBranch,
   GripHorizontal, Zap, SquareCode, Plus, Search, Wrench,
+  LayoutDashboard,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/workspace', icon: SquareCode, label: 'workspace' },
   { href: '/', icon: Home, label: 'fleet' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'dashboard' },
   { href: '/configs', icon: FileText, label: 'personas' },
   { href: '/skills', icon: Zap, label: 'skills' },
   { href: '/costs', icon: DollarSign, label: 'costs' },

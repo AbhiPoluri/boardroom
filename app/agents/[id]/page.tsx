@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Download } from 'lucide-react';
 import { LogViewer } from '@/components/LogViewer';
 import { PtyTerminal } from '@/components/PtyTerminal';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -123,6 +124,25 @@ export default function AgentPage({ params }: AgentPageProps) {
     }
   };
 
+  const handleDownloadLogs = async () => {
+    try {
+      const res = await fetch(`/api/agents/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const logs: Log[] = data.logs || [];
+      const lines = logs.map((l: Log) =>
+        `[${new Date(l.timestamp).toISOString()}] [${l.stream}] ${l.content}`
+      );
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${agent?.name || id}-logs.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {}
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -164,6 +184,15 @@ export default function AgentPage({ params }: AgentPageProps) {
             <StatusBadge status={agent.status} />
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadLogs}
+              className="font-mono text-xs border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              title="Download logs"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </Button>
             <Link href={`/agents/${id}/replay`}>
               <Button
                 variant="outline"

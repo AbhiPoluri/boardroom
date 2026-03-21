@@ -605,6 +605,68 @@ export default function WorkflowsPage() {
               ))
             )}
 
+            {/* Templates */}
+            <Separator className="my-2 bg-zinc-800" />
+            <div className="px-2 pt-1 pb-1.5 flex items-center gap-1.5">
+              <Workflow className="w-3 h-3 text-zinc-600" />
+              <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">templates</span>
+            </div>
+            {[
+              {
+                label: 'PR Review Pipeline',
+                desc: 'code-reviewer → security-scanner → summarizer',
+                steps: [
+                  { name: 'code-reviewer', type: 'claude' as AgentType, model: 'sonnet', task: 'Review the code changes for correctness, readability, and best practices.', parallel: false },
+                  { name: 'security-scanner', type: 'claude' as AgentType, model: 'sonnet', task: 'Scan the code for security vulnerabilities and potential exploits.', dependsOn: ['code-reviewer'], parallel: false },
+                  { name: 'summarizer', type: 'claude' as AgentType, model: 'haiku', task: 'Summarize the review findings from the code reviewer and security scanner into a concise PR comment.', dependsOn: ['security-scanner'], parallel: false },
+                ],
+              },
+              {
+                label: 'Test & Deploy',
+                desc: 'test-runner → deploy',
+                steps: [
+                  { name: 'test-runner', type: 'claude' as AgentType, model: 'sonnet', task: 'Run the full test suite and report any failures.', parallel: false },
+                  { name: 'deploy', type: 'claude' as AgentType, model: 'sonnet', task: 'Deploy the application to the target environment after tests pass.', dependsOn: ['test-runner'], parallel: false },
+                ],
+              },
+              {
+                label: 'Code Quality Audit',
+                desc: 'linter + security-scanner (parallel) → report',
+                steps: [
+                  { name: 'linter', type: 'claude' as AgentType, model: 'haiku', task: 'Lint the codebase and list all style violations and warnings.', parallel: true },
+                  { name: 'security-scanner', type: 'claude' as AgentType, model: 'sonnet', task: 'Scan the codebase for security issues and dependency vulnerabilities.', parallel: true },
+                  { name: 'report', type: 'claude' as AgentType, model: 'sonnet', task: 'Consolidate the linter and security scanner findings into a structured quality report.', dependsOn: ['linter', 'security-scanner'], parallel: false },
+                ],
+              },
+            ].map((tpl) => (
+              <div key={tpl.label} className="px-3 py-2 rounded-lg text-zinc-500">
+                <div className="font-mono text-[11px] font-medium text-zinc-400 truncate">{tpl.label}</div>
+                <div className="text-[9px] font-mono text-zinc-700 mt-0.5 truncate">{tpl.desc}</div>
+                <button
+                  onClick={() => {
+                    const newDraftId = genDraftId();
+                    setCurrentDraftId(newDraftId);
+                    setActiveDraftId(newDraftId);
+                    setSelected(null);
+                    setViewingRun(null);
+                    setViewedRunData(null);
+                    setEdName(tpl.label);
+                    setEdDesc(tpl.desc);
+                    setEdSteps(tpl.steps);
+                    setEdSchedule('0 * * * *');
+                    setEdCronEnabled(false);
+                    setIsNew(true);
+                    setError('');
+                    setSuccess('');
+                    isDirty.current = true;
+                  }}
+                  className="mt-1.5 text-[9px] font-mono text-emerald-500 hover:text-emerald-400 transition-colors"
+                >
+                  use template →
+                </button>
+              </div>
+            ))}
+
             {/* Drafts */}
             {drafts.length > 0 && (
               <>

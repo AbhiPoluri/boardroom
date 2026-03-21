@@ -9,6 +9,7 @@ import {
   ChevronDown, ChevronRight,
   Folder, BarChart3, Terminal as TerminalIcon,
 } from 'lucide-react';
+import Link from 'next/link';
 import { NotificationBell } from '@/components/NotificationBell';
 import { MergePanel } from '@/components/MergePanel';
 import { DependencyGraph } from '@/components/DependencyGraph';
@@ -375,6 +376,12 @@ export default function Dashboard() {
                 ))}
               </select>
             )}
+            <Link
+              href="/compare"
+              className="font-mono text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors underline underline-offset-2"
+            >
+              compare
+            </Link>
             <div className="ml-auto flex items-center gap-2">
               <input
                 value={searchQuery}
