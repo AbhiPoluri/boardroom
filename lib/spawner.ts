@@ -283,7 +283,7 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
               agent_name: name,
               branch,
               base_branch: baseBranch,
-              summary: task.slice(0, 500),
+              summary: commits.split('\n').map((c: string) => c.replace(/^[a-f0-9]+ /, '')).join('; ').slice(0, 500),
               changed_files_json: JSON.stringify(changedFiles.split('\n').filter(Boolean)),
             });
             insertLog(agentId, 'system', `Push request created: ${branch} → ${baseBranch} (${changedFiles.split('\n').filter(Boolean).length} files)`);
