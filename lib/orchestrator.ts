@@ -102,10 +102,12 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
     const home = process.env.HOME || os.homedir();
     const nvmInit = `export NVM_DIR="${home}/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"`;
 
-    // Escape for single-quote shell embedding
-    const escapedPrompt = prompt.replace(/'/g, `'\\''`);
-    // Use stream-json to get real-time events (thinking, text chunks) as they happen
-    const cmd = `${nvmInit} && claude --print --dangerously-skip-permissions --model sonnet --output-format json '${escapedPrompt}'`;
+    // Write prompt to temp file to avoid shell argument length limits
+    const fs = require('fs');
+    const path = require('path');
+    const tmpFile = path.join(os.tmpdir(), `boardroom-prompt-${Date.now()}.txt`);
+    fs.writeFileSync(tmpFile, prompt);
+    const cmd = `${nvmInit} && cat '${tmpFile}' | claude --print --dangerously-skip-permissions --model sonnet --output-format json -; rm -f '${tmpFile}'`;
 
     // Use PTY so the orchestrator terminal can render live output
     const ptyProc = pty.spawn('/bin/sh', ['-c', cmd], {
