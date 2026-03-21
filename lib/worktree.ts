@@ -237,11 +237,13 @@ export function mergeWorktreeBranch(
     git(repo, `checkout ${baseBranch}`);
     git(repo, `merge ${agentBranch} --no-ff -m "Merge ${agentBranch} into ${baseBranch}"`);
     return { success: true, message: `Merged ${agentBranch} into ${baseBranch}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    const stderr = err?.stderr?.toString() || '';
+    const fullError = msg + ' ' + stderr;
 
-    // Check if it's a merge conflict (not some other error)
-    if (msg.includes('CONFLICT') || msg.includes('Merge conflict') || msg.includes('merge failed') || msg.includes('Merge with strategy')) {
+    // Check if it's a merge conflict
+    if (fullError.includes('CONFLICT') || fullError.includes('Merge conflict') || fullError.includes('Automatic merge failed')) {
       // Try to get conflict files from the error message since merge may already be aborted
       let conflictFiles: string[] = [];
       // First try git's unmerged files list (if merge is still in progress)
@@ -250,7 +252,7 @@ export function mergeWorktreeBranch(
         conflictFiles = conflictOutput.split('\n').filter(Boolean);
       } else {
         // Extract file names from the error message (e.g. "CONFLICT (add/add): Merge conflict in src/app/page.tsx")
-        const conflictMatches = msg.match(/Merge conflict in ([^\n]+)/g) || [];
+        const conflictMatches = fullError.match(/Merge conflict in ([^\n]+)/g) || [];
         conflictFiles = conflictMatches.map(m => m.replace('Merge conflict in ', '').trim());
       }
       if (conflictFiles.length === 0) conflictFiles = ['unknown files'];
