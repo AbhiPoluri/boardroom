@@ -250,6 +250,19 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
         }
       } catch {}
 
+      // Auto-commit any uncommitted changes the agent left behind
+      if (finalStatus === 'done' && worktreePath) {
+        try {
+          const { execSync } = require('child_process');
+          const status = execSync(`git -C "${worktreePath}" status --porcelain 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
+          if (status) {
+            execSync(`git -C "${worktreePath}" add -A`, { stdio: 'pipe' });
+            execSync(`git -C "${worktreePath}" commit -m "chore: auto-commit remaining changes from ${name}"`, { stdio: 'pipe' });
+            insertLog(agentId, 'system', `Auto-committed ${status.split('\n').length} uncommitted file(s)`);
+          }
+        } catch {}
+      }
+
       // Auto-create push request if agent used git isolation and has commits
       if (useGitIsolation && repo && finalStatus === 'done' && worktreePath !== repo) {
         try {
