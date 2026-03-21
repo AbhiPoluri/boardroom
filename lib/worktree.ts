@@ -241,10 +241,19 @@ export function mergeWorktreeBranch(
     const msg = err instanceof Error ? err.message : String(err);
 
     // Check if it's a merge conflict (not some other error)
-    if (msg.includes('CONFLICT') || msg.includes('Merge conflict')) {
-      // Get list of conflicted files
+    if (msg.includes('CONFLICT') || msg.includes('Merge conflict') || msg.includes('merge failed') || msg.includes('Merge with strategy')) {
+      // Try to get conflict files from the error message since merge may already be aborted
+      let conflictFiles: string[] = [];
+      // First try git's unmerged files list (if merge is still in progress)
       const conflictOutput = gitSafe(repo, 'diff --name-only --diff-filter=U') || '';
-      const conflictFiles = conflictOutput.split('\n').filter(Boolean);
+      if (conflictOutput) {
+        conflictFiles = conflictOutput.split('\n').filter(Boolean);
+      } else {
+        // Extract file names from the error message (e.g. "CONFLICT (add/add): Merge conflict in src/app/page.tsx")
+        const conflictMatches = msg.match(/Merge conflict in ([^\n]+)/g) || [];
+        conflictFiles = conflictMatches.map(m => m.replace('Merge conflict in ', '').trim());
+      }
+      if (conflictFiles.length === 0) conflictFiles = ['unknown files'];
 
       // Abort the failed merge so repo is clean
       gitSafe(repo, 'merge --abort');
