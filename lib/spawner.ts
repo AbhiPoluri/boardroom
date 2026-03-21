@@ -109,7 +109,7 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       const modelFlag = model ? ` --model ${model}` : '';
       shellCmd = `${nvmInit} && claude --dangerously-skip-permissions${modelFlag} '${escapedTask}'`;
     } else if (type === 'codex') {
-      shellCmd = `${nvmInit} && codex --full-auto '${escapedTask}'`;
+      shellCmd = `${nvmInit} && codex exec -a never '${escapedTask}'`;
     } else {
       // opencode — use `run` for non-interactive execution
       shellCmd = `export PATH="$HOME/.opencode/bin:$PATH:/usr/local/bin:/opt/homebrew/bin" && opencode run '${escapedTask}'`;
