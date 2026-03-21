@@ -193,7 +193,7 @@ export default function WorkspacePage() {
   const [editedContent, setEditedContent] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'code' | 'diff' | 'prs'>('code');
+  const [activeTab, setActiveTab] = useState<'code' | 'diff' | 'prs' | 'fleet'>('code');
   const codeViewerRef = useRef<HTMLPreElement>(null);
 
   // Derived: active file from openFiles + activeFileIdx
@@ -1085,6 +1085,19 @@ export default function WorkspacePage() {
               </Badge>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('fleet')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-mono transition-colors ${
+              activeTab === 'fleet' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <Bot className="w-3 h-3" /> fleet
+            {agents.filter(a => a.status === 'running' || a.status === 'spawning').length > 0 && (
+              <Badge className="text-[8px] h-4 px-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/25">
+                {agents.filter(a => a.status === 'running' || a.status === 'spawning').length}
+              </Badge>
+            )}
+          </button>
         </div>
 
         {/* Chat toggle */}
@@ -1600,6 +1613,77 @@ export default function WorkspacePage() {
                 </div>
               </div>
             )
+          )}
+
+          {/* Fleet view — agent cards for this repo */}
+          {!viewingAgentId && activeTab === 'fleet' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-2">
+                {(() => {
+                  const repoAgents = agents.filter(a => a.repo === repo);
+                  const otherAgents = agents.filter(a => a.repo !== repo && (a.status === 'running' || a.status === 'spawning'));
+                  if (repoAgents.length === 0 && otherAgents.length === 0) {
+                    return (
+                      <div className="flex-1 flex items-center justify-center h-64">
+                        <div className="text-center">
+                          <Bot className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
+                          <p className="font-mono text-xs text-zinc-600">no agents for this repo</p>
+                          <p className="font-mono text-[10px] text-zinc-700 mt-1">use the + button or orchestrator to spawn agents</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      {repoAgents.length > 0 && (
+                        <div>
+                          <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">this repo ({repoAgents.length})</span>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            {repoAgents.sort((a, b) => b.created_at - a.created_at).map(a => (
+                              <div key={a.id} className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 transition-colors">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                    a.status === 'running' ? 'bg-emerald-400 animate-pulse'
+                                      : a.status === 'done' ? 'bg-emerald-400'
+                                      : a.status === 'error' ? 'bg-red-400'
+                                      : 'bg-zinc-600'
+                                  }`} />
+                                  <span className="font-mono text-xs text-zinc-200 truncate">{a.name}</span>
+                                  <span className="text-[8px] font-mono text-zinc-600 ml-auto">{a.type}</span>
+                                </div>
+                                <p className="font-mono text-[10px] text-zinc-500 line-clamp-2">{a.task}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <span className={`text-[9px] font-mono ${
+                                    a.status === 'done' ? 'text-emerald-500' : a.status === 'error' ? 'text-red-400' : a.status === 'running' ? 'text-blue-400' : 'text-zinc-600'
+                                  }`}>{a.status}</span>
+                                  {a.status === 'done' && (
+                                    <button onClick={() => viewRepoDiff()} className="text-[8px] font-mono text-zinc-600 hover:text-zinc-300">diff</button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {otherAgents.length > 0 && (
+                        <div className="mt-4">
+                          <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-wider">other active ({otherAgents.length})</span>
+                          <div className="mt-2 space-y-1">
+                            {otherAgents.map(a => (
+                              <div key={a.id} className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-mono text-zinc-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+                                <span className="truncate">{a.name}</span>
+                                <span className="text-zinc-700 ml-auto">{a.type}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
           )}
         </div>
 
