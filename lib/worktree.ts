@@ -240,7 +240,8 @@ export function mergeWorktreeBranch(
   } catch (err: any) {
     const msg = err?.message || String(err);
     const stderr = err?.stderr?.toString() || '';
-    const fullError = msg + ' ' + stderr;
+    const stdout = err?.stdout?.toString() || '';
+    const fullError = msg + ' ' + stderr + ' ' + stdout;
 
     // Check if it's a merge conflict
     if (fullError.includes('CONFLICT') || fullError.includes('Merge conflict') || fullError.includes('Automatic merge failed')) {
