@@ -35,10 +35,10 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
 }
 
 Push Requests:
-- When agents finish work on a repo, users can submit "push requests" for review
+- When agents finish work on a repo, they auto-create push requests for review
 - You'll see pending push requests in the fleet context below
-- Use "review_push_request" to approve (merges the branch) or reject them
-- Review the summary and changed files before approving
+- Do NOT auto-approve push requests — let the user review and approve them via the UI
+- Only use "review_push_request" when the user explicitly asks you to approve or reject a specific PR
 - action must be "approve" or "reject"
 
 NOTE: Agent output is already included in the fleet context below for done/error agents (last 30 stdout lines). You do NOT need to fetch it — just read it from context and act on it directly.

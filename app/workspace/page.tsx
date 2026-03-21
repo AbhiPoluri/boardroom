@@ -1620,7 +1620,9 @@ export default function WorkspacePage() {
             <div className="flex-1 overflow-y-auto p-4">
               <div className="space-y-2">
                 {(() => {
-                  const repoAgents = agents.filter(a => a.repo === repo);
+                  const now = Date.now();
+                  const recentThreshold = 2 * 60 * 60 * 1000; // 2 hours
+                  const repoAgents = agents.filter(a => a.repo === repo && (a.status === 'running' || a.status === 'spawning' || (a.status === 'done' && now - a.created_at < recentThreshold) || a.status === 'error'));
                   const otherAgents = agents.filter(a => a.repo !== repo && (a.status === 'running' || a.status === 'spawning'));
                   if (repoAgents.length === 0 && otherAgents.length === 0) {
                     return (
@@ -1757,7 +1759,9 @@ export default function WorkspacePage() {
 
             {/* Repo agents first */}
             {(() => {
-              const repoAgents = agents.filter(a => a.repo === repo);
+              const now2 = Date.now();
+              const thresh2 = 2 * 60 * 60 * 1000;
+              const repoAgents = agents.filter(a => a.repo === repo && (a.status === 'running' || a.status === 'spawning' || (a.status === 'done' && now2 - a.created_at < thresh2) || a.status === 'error'));
               const otherAgents = agents.filter(a => a.repo !== repo && (a.status === 'running' || a.status === 'spawning'));
 
               return (
