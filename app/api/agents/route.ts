@@ -142,8 +142,9 @@ export async function PUT(req: NextRequest) {
     // Resolve and validate the path — prevent directory traversal
     const resolved = path.resolve(dirPath);
     const homeDir = require('os').homedir();
-    if (!resolved.startsWith(homeDir) && !resolved.startsWith('/tmp')) {
-      return NextResponse.json({ error: `Path must be under home directory or /tmp` }, { status: 400 });
+    const tmpDir = require('os').tmpdir();
+    if (!resolved.startsWith(homeDir) && !resolved.startsWith(tmpDir + '/boardroom')) {
+      return NextResponse.json({ error: `Path must be under home directory or ${tmpDir}/boardroom` }, { status: 400 });
     }
     if (!fs.existsSync(resolved)) {
       return NextResponse.json({ error: `Path does not exist: ${resolved}` }, { status: 400 });

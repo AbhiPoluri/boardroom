@@ -35,7 +35,13 @@ export function middleware(request: NextRequest) {
     ? authHeader.slice(7)
     : apiKeyHeader;
 
-  if (providedKey !== apiKey) {
+  let keyValid = false;
+  try {
+    keyValid = require('crypto').timingSafeEqual(Buffer.from(providedKey ?? ''), Buffer.from(apiKey));
+  } catch {
+    keyValid = false;
+  }
+  if (!keyValid) {
     return NextResponse.json(
       { error: 'Unauthorized. Set Authorization: Bearer <key> or x-api-key header.' },
       { status: 401 }

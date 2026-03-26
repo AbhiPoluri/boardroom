@@ -11,8 +11,13 @@ export async function GET(req: NextRequest) {
   if (!url) return NextResponse.json({ error: 'url required' }, { status: 400 });
 
   // Only allow github.com URLs
-  if (!url.startsWith('https://github.com/')) {
-    return NextResponse.json({ error: 'Only GitHub URLs supported' }, { status: 400 });
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'github.com') {
+      return NextResponse.json({ error: 'Only GitHub URLs supported' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
   const cached = cache.get(url);

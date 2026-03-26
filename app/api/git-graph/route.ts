@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   // Prevent traversal above home
   const home = os.homedir();
   const resolved = path.resolve(repo);
-  if (!resolved.startsWith(home)) {
+  if (!resolved.startsWith(home + path.sep)) {
     return NextResponse.json({ error: 'access denied' }, { status: 403 });
   }
 

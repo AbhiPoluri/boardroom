@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
-const SAFE_REF = /^[\w\-\/\.]+$/;
+const SAFE_REF = /^[a-zA-Z0-9_\-\.\/]+$/;
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +14,16 @@ export async function GET(req: NextRequest) {
   const base = req.nextUrl.searchParams.get('base') || 'main';
 
   if (!repo) return NextResponse.json({ error: 'repo parameter required' }, { status: 400 });
-  if (!fs.existsSync(repo)) return NextResponse.json({ error: 'repo not found' }, { status: 404 });
+
+  const resolved = path.resolve(repo);
+  const home = os.homedir();
+  if (!resolved.startsWith(home + path.sep)) return NextResponse.json({ error: 'access denied' }, { status: 403 });
+
+  if (!fs.existsSync(resolved)) return NextResponse.json({ error: 'repo not found' }, { status: 404 });
   if (branch && !SAFE_REF.test(branch)) return NextResponse.json({ error: 'invalid branch name' }, { status: 400 });
   if (!SAFE_REF.test(base)) return NextResponse.json({ error: 'invalid base name' }, { status: 400 });
+  if (branch && (branch.includes('..') || base.includes('..'))) return NextResponse.json({ error: 'invalid ref' }, { status: 400 });
+  if (base.includes('..')) return NextResponse.json({ error: 'invalid ref' }, { status: 400 });
 
   try {
     // If branch specified, diff against base
@@ -58,6 +67,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ diff, staged, status: status.split('\n').filter(Boolean) });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'git diff failed' }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: 'git operation failed' }, { status: 500 });
   }
 }

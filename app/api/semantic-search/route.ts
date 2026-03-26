@@ -102,6 +102,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (err) {
-    return NextResponse.json({ results: [], error: String(err) });
+    console.error(err);
+    return NextResponse.json({ results: [], error: 'search failed' });
   }
 }

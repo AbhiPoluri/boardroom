@@ -364,6 +364,10 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "content is required" }, { status: 400 });
     }
 
+    if (content.length > 500000) {
+      return NextResponse.json({ error: "content too large" }, { status: 400 });
+    }
+
     const skillDir = safePath(name);
     if (!skillDir || !fs.existsSync(skillDir)) {
       return NextResponse.json({ error: "Skill not found" }, { status: 404 });
