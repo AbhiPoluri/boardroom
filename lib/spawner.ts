@@ -11,6 +11,15 @@ import type { AgentType } from '@/types';
 type AnyProcess = pty.IPty | ChildProcess;
 const processes = new Map<string, AnyProcess>();
 const ptyProcesses = new Map<string, pty.IPty>(); // PTY-specific lookup
+const chunkCounts = new Map<string, number>(); // per-agent PTY chunk counter
+
+function cleanupProcesses() {
+  for (const [, p] of ptyProcesses) {
+    try { p.kill(); } catch {}
+  }
+}
+process.on('SIGTERM', cleanupProcesses);
+process.on('SIGINT', cleanupProcesses);
 
 export function isPtyProcess(agentId: string): boolean {
   return ptyProcesses.has(agentId);
@@ -106,7 +115,9 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
   if (type === 'claude' || type === 'codex' || type === 'opencode') {
     let shellCmd: string;
     if (type === 'claude') {
-      const modelFlag = model ? ` --model ${model}` : '';
+      const ALLOWED_MODELS = new Set(['haiku', 'sonnet', 'opus', 'claude-3-5-sonnet-20241022', 'claude-sonnet-4-5-20250514', 'claude-3-haiku-20240307', 'claude-opus-4-5-20250514']);
+      const safeModel = model && ALLOWED_MODELS.has(model) ? model : undefined;
+      const modelFlag = safeModel ? ` --model ${safeModel}` : '';
       shellCmd = `${nvmInit} && claude --dangerously-skip-permissions${modelFlag} '${escapedTask}'`;
     } else if (type === 'codex') {
       shellCmd = `${nvmInit} && codex exec --full-auto --skip-git-repo-check '${escapedTask}'`;
@@ -152,8 +163,12 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
 
     // Store raw PTY output as base64 chunks
     ptyProc.onData((data: string) => {
-      // Store raw bytes for xterm.js rendering
-      insertPtyChunk(agentId, Buffer.from(data).toString('base64'));
+      // Store raw bytes for xterm.js rendering (cap at 50000 chunks per agent)
+      const count = (chunkCounts.get(agentId) || 0) + 1;
+      chunkCounts.set(agentId, count);
+      if (count <= 50000) {
+        insertPtyChunk(agentId, Buffer.from(data).toString('base64'));
+      }
       // Extract plain text for orchestrator context (strip ANSI + TUI chrome)
       const plain = stripAnsi(data);
       lineBuffer += plain;
@@ -190,6 +205,7 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     ptyProc.onExit(({ exitCode, signal }) => {
       processes.delete(agentId);
       ptyProcesses.delete(agentId);
+      chunkCounts.delete(agentId);
       if (idleTimer) clearTimeout(idleTimer);
 
       // Flush remaining line buffer
@@ -253,11 +269,14 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       // Auto-commit any uncommitted changes the agent left behind
       if (finalStatus === 'done' && worktreePath) {
         try {
-          const { execSync } = require('child_process');
-          const status = execSync(`git -C "${worktreePath}" status --porcelain 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
+          const { execFileSync } = require('child_process');
+          let status = '';
+          try {
+            status = execFileSync('git', ['-C', worktreePath, 'status', '--porcelain'], { encoding: 'utf-8' }).trim();
+          } catch {}
           if (status) {
-            execSync(`git -C "${worktreePath}" add -A`, { stdio: 'pipe' });
-            execSync(`git -C "${worktreePath}" commit -m "chore: auto-commit remaining changes from ${name}"`, { stdio: 'pipe' });
+            execFileSync('git', ['-C', worktreePath, 'add', '-A'], { stdio: 'pipe' });
+            execFileSync('git', ['-C', worktreePath, 'commit', '-m', `chore: auto-commit remaining changes from ${name}`], { stdio: 'pipe' });
             insertLog(agentId, 'system', `Auto-committed ${status.split('\n').length} uncommitted file(s)`);
           }
         } catch {}
@@ -266,15 +285,21 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       // Auto-create push request if agent used git isolation and has commits
       if (useGitIsolation && repo && finalStatus === 'done' && worktreePath !== repo) {
         try {
-          const { execSync } = require('child_process');
+          const { execFileSync } = require('child_process');
           const repoName = require('path').basename(repo);
           const safeName = (name || 'agent').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 30);
           const branch = `${repoName}/${safeName}-${agentId.slice(0, 8)}`;
-          const baseBranch = execSync(`git -C "${repo}" symbolic-ref --short HEAD`, { encoding: 'utf-8' }).trim();
+          const baseBranch = execFileSync('git', ['-C', repo, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf-8' }).trim();
           // Check if agent made any commits on its branch
-          const commits = execSync(`git -C "${repo}" log ${baseBranch}..${branch} --oneline 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
+          let commits = '';
+          try {
+            commits = execFileSync('git', ['-C', repo, 'log', `${baseBranch}..${branch}`, '--oneline'], { encoding: 'utf-8' }).trim();
+          } catch {}
           if (commits) {
-            const changedFiles = execSync(`git -C "${repo}" diff --name-only ${baseBranch}...${branch} 2>/dev/null || echo ""`, { encoding: 'utf-8' }).trim();
+            let changedFiles = '';
+            try {
+              changedFiles = execFileSync('git', ['-C', repo, 'diff', '--name-only', `${baseBranch}...${branch}`], { encoding: 'utf-8' }).trim();
+            } catch {}
             const { createPushRequest } = require('./db');
             const { v4: uuid4 } = require('uuid');
             createPushRequest({
@@ -310,10 +335,13 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       shellCmd = `echo "boardroom agent started"; echo "task: ${escapedTask}"; sleep 1; echo "done"`;
       break;
     case 'custom':
+      if (!process.env.BOARDROOM_ALLOW_CUSTOM) {
+        throw new Error('Custom agent type is disabled. Set BOARDROOM_ALLOW_CUSTOM=true to enable.');
+      }
       shellCmd = `${nvmInit} && ${escapedTask}`;
       break;
     default:
-      shellCmd = `${nvmInit} && ${escapedTask}`;
+      throw new Error('Unsupported agent type: ' + type);
   }
 
   const child = spawn('/bin/sh', ['-c', shellCmd], {

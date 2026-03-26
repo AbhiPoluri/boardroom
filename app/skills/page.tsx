@@ -447,7 +447,7 @@ export default function SkillsPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
-          <SubNav tabs={[{ label: 'personas', href: '/configs', active: false }, { label: 'skills', href: '/skills', active: true }]} />
+          <SubNav tabs={[{ label: 'personas', href: '/configs', active: false }, { label: 'skills', href: '/skills', active: true }, { label: 'marketplace', href: '/marketplace', active: false }]} />
           <h1 className="font-mono text-sm text-zinc-100">skills</h1>
           <span className="text-[10px] font-mono text-zinc-600">~/.claude/skills/</span>
           <Badge variant="outline" className="text-[9px] font-mono">{skills.length}</Badge>

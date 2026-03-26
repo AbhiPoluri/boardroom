@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import os from 'os';
+import { execFileSync } from 'child_process';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
   // Annotate entries with git status
   let gitStatus: Record<string, string> = {};
   try {
-    const output = execSync(`git -C "${repo}" status --porcelain`, { encoding: 'utf-8' });
+    const output = execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf-8' });
     const statusMap: Record<string, string> = { 'M': 'modified', 'A': 'added', 'D': 'deleted', '??': 'untracked', 'MM': 'modified', 'AM': 'modified', 'AD': 'deleted' };
     for (const line of output.split('\n').filter(Boolean)) {
       const status = line.slice(0, 2).trim();
@@ -88,18 +89,33 @@ export async function GET(req: NextRequest) {
   // Return current branch name when listing repo root
   let branch: string | null = null;
   if (filePath === '') {
-    try { branch = execSync(`git -C "${repo}" rev-parse --abbrev-ref HEAD`, { encoding: 'utf-8' }).trim(); } catch {}
+    try { branch = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf-8' }).trim(); } catch {}
   }
 
   return NextResponse.json({ entries: annotated, path: filePath, repo, branch });
 }
 
 export async function PUT(req: NextRequest) {
-  const { repo, path: filePath, content } = await req.json();
+  let repo: string, filePath: string, content: string;
+  try {
+    const body = await req.json();
+    repo = body.repo;
+    filePath = body.path;
+    content = body.content;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
 
   if (!repo) return NextResponse.json({ error: 'repo parameter required' }, { status: 400 });
   if (!filePath) return NextResponse.json({ error: 'path parameter required' }, { status: 400 });
   if (typeof content !== 'string') return NextResponse.json({ error: 'content must be a string' }, { status: 400 });
+
+  const home = os.homedir();
+  const resolvedRepo = path.resolve(repo);
+  if (!resolvedRepo.startsWith(home + path.sep)) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 });
+  }
+
   if (!fs.existsSync(repo)) return NextResponse.json({ error: 'repo not found' }, { status: 404 });
 
   const target = safePath(repo, filePath);

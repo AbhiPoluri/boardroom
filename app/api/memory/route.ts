@@ -24,8 +24,18 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { key, value, category } = await req.json();
+  let key: string, value: string, category: string | undefined;
+  try {
+    const body = await req.json();
+    key = body.key;
+    value = body.value;
+    category = body.category;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
   if (!key || !value) return NextResponse.json({ error: 'key and value required' }, { status: 400 });
+  if (key.length > 256) return NextResponse.json({ error: 'key too long (max 256)' }, { status: 400 });
+  if (value.length > 65536) return NextResponse.json({ error: 'value too long (max 65536)' }, { status: 400 });
   setMemory(key, value, category || 'general');
   return NextResponse.json({ ok: true }, { status: 201 });
 }

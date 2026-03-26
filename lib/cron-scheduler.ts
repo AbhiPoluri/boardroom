@@ -4,6 +4,7 @@ import { runWorkflow } from './workflow-runner';
 import { v4 as uuidv4 } from 'uuid';
 import { CronExpressionParser } from 'cron-parser';
 import type { AgentType } from '@/types';
+import { log } from './logger';
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let started = false;
@@ -62,9 +63,9 @@ async function executeCronJob(job: {
       model: job.model || 'sonnet',
     });
 
-    console.error(`[cron] Started job "${job.name}" → agent ${agentId.slice(0, 8)}`);
+    log.info(`[cron] Started job "${job.name}" → agent ${agentId.slice(0, 8)}`);
   } catch (err) {
-    console.error(`[cron] Failed to run job "${job.name}":`, err);
+    log.error(`[cron] Failed to run job "${job.name}":`, err);
     recordCronRun(job.id, agentId, 'error');
   }
 }
@@ -100,17 +101,17 @@ function tick() {
           try { steps = JSON.parse(wf.steps_json); } catch { continue; }
           if (steps.length === 0) continue;
 
-          console.error(`[cron] Triggering scheduled workflow "${wf.name}"`);
+          log.info(`[cron] Triggering scheduled workflow "${wf.name}"`);
           runWorkflow(wf.name, steps).catch((err) => {
-            console.error(`[cron] Failed to run scheduled workflow "${wf.name}":`, err);
+            log.error(`[cron] Failed to run scheduled workflow "${wf.name}":`, err);
           });
         }
       }
     } catch (err) {
-      console.error('[cron] Scheduled workflow tick error:', err);
+      log.error('[cron] Scheduled workflow tick error:', err);
     }
   } catch (err) {
-    console.error('[cron] Scheduler tick error:', err);
+    log.error('[cron] Scheduler tick error:', err);
   }
 }
 
@@ -118,7 +119,7 @@ export function startCronScheduler() {
   if (started) return;
   started = true;
 
-  console.error('[cron] Scheduler started — checking every 30s');
+  log.info('[cron] Scheduler started — checking every 30s');
 
   // Check immediately on start
   tick();

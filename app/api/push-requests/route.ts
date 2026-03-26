@@ -96,6 +96,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (action === 'approve') {
+    // Update DB status first so it's correct even if merge fails
+    updatePushRequest(id, 'approved', comment);
+    createNotification('push_approved', `Push request approved: ${pr.agent_name}`, comment || `Branch ${pr.branch} merged to ${pr.base_branch}`, pr.agent_id);
     // Actually merge the branch
     const agent = getAgentById(pr.agent_id);
     if (agent?.repo) {
@@ -113,8 +116,6 @@ export async function PATCH(req: NextRequest) {
         return Response.json({ error: `Merge failed: ${result.message}` }, { status: 500 });
       }
     }
-    updatePushRequest(id, 'approved', comment);
-    createNotification('push_approved', `Push request approved: ${pr.agent_name}`, comment || `Branch ${pr.branch} merged to ${pr.base_branch}`, pr.agent_id);
   } else {
     updatePushRequest(id, 'rejected', comment);
     createNotification('push_rejected', `Push request rejected: ${pr.agent_name}`, comment || 'No reason given', pr.agent_id);

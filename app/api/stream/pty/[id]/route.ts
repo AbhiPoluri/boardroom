@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getPtyChunks } from '@/lib/db';
+import { getPtyChunks, getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,8 +21,14 @@ export async function GET(
         } catch {}
       };
 
-      // Send all existing chunks first
-      const initial = getPtyChunks(id, 0);
+      // Send all existing chunks first — capped at the last 2000 to avoid massive payloads
+      const MAX_INITIAL_CHUNKS = 2000;
+      const db = getDb();
+      const anchorRow = db.prepare(
+        `SELECT id FROM pty_chunks WHERE agent_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?`
+      ).get(id, MAX_INITIAL_CHUNKS - 1) as { id: number } | undefined;
+      const afterId = anchorRow ? anchorRow.id - 1 : 0;
+      const initial = getPtyChunks(id, afterId);
       if (initial.length > 0) {
         send({ type: 'initial', chunks: initial });
         lastId = initial[initial.length - 1].id;
@@ -38,13 +44,24 @@ export async function GET(
           }
         } catch {
           clearInterval(interval);
+          clearInterval(heartbeat);
           try { controller.close(); } catch {}
         }
       }, 500);
 
+      // Heartbeat every 30s to keep the connection alive
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(': heartbeat\n\n'));
+        } catch {
+          clearInterval(heartbeat);
+        }
+      }, 30000);
+
       // Clean up when client disconnects
       req.signal.addEventListener('abort', () => {
         clearInterval(interval);
+        clearInterval(heartbeat);
         try { controller.close(); } catch {}
       });
     },

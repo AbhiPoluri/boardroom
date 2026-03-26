@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "next dev -p 7391",
     "build": "next build && node scripts/fix-symlinks.js",
-    "start": "next start",
+    "start": "next start -p ${PORT:-3000}",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "electron:dev": "concurrently \"next dev -p 7391\" \"wait-on http://localhost:7391 && NODE_ENV=development electron .\"",
     "electron:build": "next build && electron-builder --mac && node scripts/fix-native-modules.js",
     "electron:pack": "electron-builder --mac --dir && node scripts/fix-native-modules.js"
@@ -69,6 +72,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.1",
     "concurrently": "^9.2.1",
     "electron": "^41.0.2",
     "electron-builder": "^26.8.1",
@@ -76,6 +80,7 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vitest": "^4.1.1",
     "wait-on": "^9.0.4"
   }
 }

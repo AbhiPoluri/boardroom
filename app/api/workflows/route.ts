@@ -32,7 +32,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
 
   // POST with action=run — execute a workflow
   if (body.action === 'run') {
@@ -41,7 +46,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'steps[] required to run' }, { status: 400 });
     }
     try {
-      const result = await runWorkflow(name || 'unnamed', steps, repo);
+      const result = await runWorkflow(String(name || 'unnamed'), steps, repo as string | undefined);
       return NextResponse.json({ ok: true, ...result });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to run';
@@ -54,7 +59,7 @@ export async function POST(req: NextRequest) {
   if (body.action === 'cancel') {
     const { runId } = body;
     if (!runId) return NextResponse.json({ error: 'runId required' }, { status: 400 });
-    const ok = cancelWorkflow(runId);
+    const ok = cancelWorkflow(String(runId));
     return NextResponse.json({ ok, cancelled: ok });
   }
 
@@ -64,8 +69,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'name and steps[] required' }, { status: 400 });
   }
   const id = uuidv4();
-  saveWorkflow(id, name, description || '', steps, {
-    schedule: schedule || null,
+  saveWorkflow(id, String(name), String(description || ''), steps as unknown[], {
+    schedule: (schedule as string) || null,
     cronEnabled: cron_enabled ? 1 : 0,
     layout: layout || null,
   });
@@ -73,11 +78,20 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const { id, name, description, steps, schedule, cron_enabled, layout } = await req.json();
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const { id, name, description, steps, schedule, cron_enabled, layout } = parsed as {
+    id?: string; name?: string; description?: string; steps?: unknown[];
+    schedule?: string; cron_enabled?: number; layout?: unknown;
+  };
   if (!id || !name || !steps) {
     return NextResponse.json({ error: 'id, name, and steps required' }, { status: 400 });
   }
-  saveWorkflow(id, name, description || '', steps, {
+  saveWorkflow(id, name, description || '', steps as unknown[], {
     schedule: schedule || null,
     cronEnabled: cron_enabled ? 1 : 0,
     layout: layout || null,

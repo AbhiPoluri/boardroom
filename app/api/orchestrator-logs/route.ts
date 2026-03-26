@@ -9,8 +9,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(getOrchestratorLogStats());
   }
 
-  const limit = parseInt(req.nextUrl.searchParams.get('limit') || '200');
+  const rawLimit = req.nextUrl.searchParams.get('limit') || '200';
+  const limit = Math.max(1, Math.min(1000, parseInt(rawLimit, 10) || 200));
   const since = req.nextUrl.searchParams.get('since');
-  const logs = getOrchestratorLogs(limit, since ? parseInt(since) : undefined);
+  const rawSince = since ? parseInt(since, 10) : NaN;
+  const logs = getOrchestratorLogs(limit, !isNaN(rawSince) ? rawSince : undefined);
   return NextResponse.json({ logs });
 }

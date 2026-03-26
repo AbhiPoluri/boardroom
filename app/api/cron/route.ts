@@ -84,6 +84,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'name, schedule, and task required' }, { status: 400 });
   }
 
+  try {
+    CronExpressionParser.parse(schedule);
+  } catch {
+    return NextResponse.json({ error: `Invalid cron schedule: "${schedule}"` }, { status: 400 });
+  }
+
   const id = uuidv4().slice(0, 8);
   createCronJob({ id, name, schedule, task, agent_type, model, repo });
   const job = getCronJob(id);
@@ -91,15 +97,36 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const { id, ...updates } = await req.json();
+  let body: { id?: string; [key: string]: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const { id, ...updates } = body;
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+
+  // Validate schedule if it's being updated
+  if (updates.schedule !== undefined) {
+    try {
+      CronExpressionParser.parse(updates.schedule as string);
+    } catch {
+      return NextResponse.json({ error: `Invalid cron schedule: "${updates.schedule}"` }, { status: 400 });
+    }
+  }
+
   updateCronJob(id, updates);
   const job = getCronJob(id);
   return NextResponse.json({ job });
 }
 
 export async function DELETE(req: NextRequest) {
-  const body = await req.json();
+  let body: { id?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   deleteCronJob(body.id);
   return NextResponse.json({ ok: true });

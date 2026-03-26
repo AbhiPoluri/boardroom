@@ -1,109 +1,161 @@
-# Boardroom
+# boardroom
 
-Agent orchestration platform. Spawn, manage, and coordinate AI coding agents from a single dashboard.
+**AI Agent Orchestration Platform**
 
-## What it does
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Commits](https://img.shields.io/badge/commits-100%2B-brightgreen)
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 
-- **Workspace** — IDE with file browser, multi-tab editor, syntax highlighting, git status, inline diff viewer, PR review
-- **Orchestrator** — Chat interface that spawns and coordinates agents across repos
-- **Workflows** — Visual DAG pipelines with output passing, evaluator loops, router nodes
-- **Fleet** — Monitor all agents with live logs, costs, token usage, branch tracking
-- **Personas** — Reusable prompt personas for agents
+Spawn, orchestrate, and manage AI agents from a single platform. Claude Code, Codex, OpenCode — running in parallel, communicating, and delivering results.
 
-## Requirements
+---
 
-- **Node.js 20+** — native modules (better-sqlite3, node-pty) require it
-- **Git** — agents use worktrees for branch isolation
-- **Claude Code CLI** — authenticated with `claude login`
-- **Claude Max or Pro** — agents run via CLI subscription, no API key needed
+## Key Features
 
-Build tools for native modules (usually pre-installed on macOS):
-- Python 3, make, g++ (for `npm install` to compile better-sqlite3 and node-pty)
+- **Multi-Agent Spawning** — Launch Claude Code, Codex, OpenCode, and custom shell agents in parallel across multiple repos
+- **Orchestrator Chat** — Describe what you need in plain language; the orchestrator breaks it down and delegates to agents
+- **Visual DAG Pipelines** — Drag-and-drop workflow builder with output passing, evaluator loops, and router nodes
+- **Git Worktree Isolation** — Every agent gets its own branch via git worktrees — no conflicts, clean separation
+- **Auto-Commit & Auto-PR** — Agents commit their work and open pull requests automatically when done
+- **Merge Conflict Resolution** — Boardroom detects conflicts and auto-spawns resolver agents to fix them
+- **IDE Workspace** — Full in-browser file browser, multi-tab editor, syntax highlighting, diff viewer, and PR review
+- **Fleet Monitoring** — Real-time agent status, live logs, cost tracking, and token usage per agent
+- **Marketplace** — 100+ skills, MCP server configs, and reusable agent personas
+- **Cron Scheduling** — Schedule recurring agent tasks on any cron expression
+- **Agent Communication** — Built-in message bus so agents can coordinate and pass results to each other
+- **Cost Analytics** — Per-agent token tracking and cost breakdown with optimization suggestions
 
-### Optional
+---
 
-- **Codex CLI** (`npm i -g @openai/codex`) — for `codex` agent type
-- **OpenCode CLI** (opencode.ai) — for `opencode` agent type
-
-## Setup
+## Quick Start
 
 ```bash
-git clone https://github.com/AbhiPoluri/boardroom.git && cd boardroom
+git clone https://github.com/AbhiPoluri/boardroom
+cd boardroom
 npm install
 npm run dev
 ```
 
-Opens on http://localhost:7391
+Open [http://localhost:7391](http://localhost:7391)
 
-### Production
+**Prerequisites:**
+- Node.js 20+
+- Git
+- Claude Code CLI: `npm install -g @anthropic-ai/claude-code` then `claude login`
 
+**Optional (for additional agent types):**
+- Codex: `npm install -g @openai/codex`
+- OpenCode: see [opencode.ai](https://opencode.ai)
+
+**Production build:**
 ```bash
 npm run build && npm start
 ```
 
-Or with Docker:
+---
+
+## Architecture
+
+Boardroom is a self-hosted Next.js app that manages agent processes directly on your machine.
+
+- **Next.js 16 App Router + TypeScript** — full-stack framework for UI and API routes
+- **SQLite (better-sqlite3)** — lightweight persistence for agents, workflows, logs, and costs
+- **node-pty** — spawns real terminal sessions for each agent with live I/O streaming
+- **Git worktrees** — branch isolation so parallel agents never step on each other
+- **SSE (Server-Sent Events)** — real-time streaming of agent output to the browser
+
+```
+boardroom/
+├── app/
+│   ├── workspace/        # IDE: file browser, editor, diff, PR review
+│   ├── workflows/        # Visual DAG pipeline builder + runner
+│   ├── orchestrator/     # Chat UI for orchestration
+│   ├── costs/            # Token usage + cost analytics
+│   ├── cron/             # Scheduled agent jobs
+│   ├── skills/           # Skills and personas manager
+│   └── api/              # 20+ REST API endpoints
+├── components/           # Shared React components
+├── lib/
+│   ├── orchestrator.ts   # Claude CLI orchestration logic
+│   ├── spawner.ts        # Agent process lifecycle
+│   ├── workflow-runner.ts # DAG execution engine
+│   ├── db.ts             # SQLite access layer
+│   └── worktree.ts       # Git worktree operations
+└── middleware.ts          # API key authentication
+```
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BOARDROOM_API_KEY` | _(none)_ | API authentication — set this in production |
+| `BOARDROOM_RATE_LIMIT` | `10` | Max requests per minute per client |
+| `BOARDROOM_MAX_AGENTS` | `20` | Max concurrent agents |
+| `WORKFLOW_SANDBOX_REPO` | `~/boardroom-sandbox` | Default repo for workflow agent execution |
+| `DB_PATH` | `.boardroom.db` | SQLite database file location |
+| `PORT` | `3000` | Server port (dev uses 7391) |
+
+No `ANTHROPIC_API_KEY` needed — agents authenticate via your Claude Code CLI login.
+
+---
+
+## Docker
+
+```bash
+docker compose up
+```
+
+Or with a generated API key for production:
 
 ```bash
 BOARDROOM_API_KEY=$(openssl rand -hex 32) docker compose up -d
 ```
 
-## Environment Variables
+The `docker-compose.yml` mounts your local `~/.config/claude` directory so agents can use your existing Claude Code login inside the container.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `BOARDROOM_API_KEY` | No | empty (no auth) | Protects all API routes. Set for production. |
-| `DB_PATH` | No | `.boardroom.db` | SQLite database location |
-| `WORKFLOW_SANDBOX_REPO` | No | `~/boardroom-sandbox` | Where workflow agents run |
-| `PORT` | No | `3000` | Server port (dev uses 7391) |
+---
 
-**Not needed:** `ANTHROPIC_API_KEY` — the orchestrator and agents use `claude --print` which authenticates via your Claude Code CLI login, not an API key.
+## API
 
-## Architecture
+Full interactive docs available at [http://localhost:7391/api-docs](http://localhost:7391/api-docs) when the server is running.
 
-```
-boardroom/
-├── app/                  # Next.js pages + API routes
-│   ├── workspace/        # IDE: file browser, editor, diff, PRs
-│   ├── workflows/        # Visual pipeline builder + runner
-│   ├── orchestrator/     # Chat UI for the orchestrator
-│   ├── configs/          # Agent config templates
-│   ├── skills/           # Claude Code skills manager
-│   ├── cron/             # Scheduled agent jobs
-│   ├── costs/            # Token usage + cost tracking
-│   ├── logs/             # Live agent log viewer
-│   ├── branches/         # Git worktree + branch manager
-│   └── api/              # 20+ API endpoints
-├── components/           # React components
-├── lib/                  # Core logic
-│   ├── orchestrator.ts   # Claude CLI orchestration
-│   ├── spawner.ts        # Agent process management
-│   ├── workflow-runner.ts# DAG execution engine
-│   ├── db.ts             # SQLite database
-│   └── worktree.ts       # Git worktree operations
-└── middleware.ts          # API key auth
+Key endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/agents` | Spawn a new agent |
+| `GET` | `/api/agents` | List all agents and their status |
+| `DELETE` | `/api/agents/:id` | Stop and remove an agent |
+| `POST` | `/api/workflows/run` | Execute a workflow pipeline |
+| `GET` | `/api/costs` | Get token usage and cost breakdown |
+| `POST` | `/api/orchestrator/chat` | Send a message to the orchestrator |
+| `GET` | `/api/logs/:agentId` | Stream live agent logs via SSE |
+
+---
+
+## Testing
+
+```bash
+npm test
+npm run test:coverage
 ```
 
-## Agent Types
+---
 
-| Type | CLI | Description |
-|------|-----|-------------|
-| `claude` | Claude Code | Full coding agent with tools, file access, git |
-| `codex` | OpenAI Codex | `--full-auto` mode |
-| `opencode` | OpenCode | `opencode run` for non-interactive |
-| `custom` | Shell | Raw shell command execution |
-| `test` | Echo | Quick test/debug agent |
+## Contributing
 
-## Key Features
+1. Fork the repo
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Make your changes with tests
+4. Open a pull request against `main`
 
-- **Cmd+K** command palette for global navigation
-- **Git isolation** — each agent gets its own worktree branch
-- **Auto push requests** — agents create PRs when they finish
-- **Workflow presets** — use saved agent configs in pipeline steps
-- **Agent swarm** — orchestrator can spawn parallel agent teams
-- **Cost optimizer** — suggestions to reduce token spend
-- **Semantic search** — grep-powered code search in workspace
-- **Mobile responsive** — icons-only nav on small screens
+Please keep PRs focused — one feature or fix per PR. For large changes, open an issue first to discuss the approach.
+
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE)

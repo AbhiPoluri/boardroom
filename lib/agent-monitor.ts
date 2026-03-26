@@ -4,7 +4,7 @@
  * No user intervention required.
  */
 
-import { getAllAgents, getLogsForAgent, insertLog, cleanupOldPtyChunks } from './db';
+import { getAllAgents, getLogsForAgent, insertLog, cleanupOldPtyChunks, cleanupOldAgents } from './db';
 import { sendToAgent, isRunning } from './spawner';
 import { runClaudeCLI } from './orchestrator';
 import type { Agent } from '@/types';
@@ -62,6 +62,7 @@ async function tick(): Promise<void> {
   cleanupCounter++;
   if (cleanupCounter % 5 === 0) {
     try { cleanupOldPtyChunks(); } catch {}
+    try { cleanupOldAgents(); } catch {}
   }
 
   const agents = getAllAgents();

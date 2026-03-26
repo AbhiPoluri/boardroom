@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useRef, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Download } from 'lucide-react';
@@ -30,6 +30,7 @@ export default function AgentPage({ params }: AgentPageProps) {
   const [infoExpanded, setInfoExpanded] = useState(true);
   const [tokens, setTokens] = useState<{ input_tokens: number; output_tokens: number; cost_usd: number } | null>(null);
   const [agentSummary, setAgentSummary] = useState<string | null>(null);
+  const initialLogsLoadedRef = useRef(false);
 
   const fetchAgent = useCallback(async () => {
     try {
@@ -44,8 +45,9 @@ export default function AgentPage({ params }: AgentPageProps) {
       const data = await res.json();
       setAgent(data.agent);
       setHasPty(data.hasPty || false);
-      if (initialLogs.length === 0) {
+      if (!initialLogsLoadedRef.current) {
         setInitialLogs(data.logs || []);
+        initialLogsLoadedRef.current = true;
       }
       if (data.tokens) setTokens(data.tokens);
       setError('');
@@ -54,7 +56,7 @@ export default function AgentPage({ params }: AgentPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [id, initialLogs.length]);
+  }, [id]);
 
   // Fetch summary when agent is done/error and has no logs
   useEffect(() => {
@@ -140,7 +142,11 @@ export default function AgentPage({ params }: AgentPageProps) {
       a.download = `${agent?.name || id}-logs.txt`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to download logs:', err);
+      setMsgFeedback('error: failed to download logs');
+      setTimeout(() => setMsgFeedback(''), 3000);
+    }
   };
 
   if (loading) {
@@ -299,7 +305,6 @@ export default function AgentPage({ params }: AgentPageProps) {
             initialLogs={initialLogs}
             agentStatus={agent.status}
             summary={agentSummary}
-            agentTask={agent.task}
           />
         )}
       </div>

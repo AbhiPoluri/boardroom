@@ -105,9 +105,10 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
     // Write prompt to temp file to avoid shell argument length limits
     const fs = require('fs');
     const path = require('path');
-    const tmpFile = path.join(os.tmpdir(), `boardroom-prompt-${Date.now()}.txt`);
+    const tmpFile = path.join(os.tmpdir(), `boardroom-prompt-${crypto.randomUUID()}.txt`);
     fs.writeFileSync(tmpFile, prompt);
-    const cmd = `${nvmInit} && cat '${tmpFile}' | claude --print --dangerously-skip-permissions --model sonnet --output-format json -; rm -f '${tmpFile}'`;
+    const cleanup = () => { try { fs.unlinkSync(tmpFile); } catch {} };
+    const cmd = `${nvmInit} && cat '${tmpFile}' | claude --print --dangerously-skip-permissions --model sonnet --output-format json -`;
 
     // Use PTY so the orchestrator terminal can render live output
     const ptyProc = pty.spawn('/bin/sh', ['-c', cmd], {
@@ -125,6 +126,7 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
     });
 
     ptyProc.onExit(({ exitCode }) => {
+      cleanup();
       if (exitCode !== 0) {
         safeReject(new Error(`claude CLI exited with code ${exitCode}: ${output.slice(0, 200)}`));
         return;
@@ -150,6 +152,7 @@ export async function runClaudeCLI(prompt: string): Promise<CLIResult> {
     // 3 minute timeout
     setTimeout(() => {
       if (!settled) {
+        cleanup();
         try { ptyProc.kill(); } catch {}
         safeReject(new Error('claude CLI timed out after 180s'));
       }

@@ -438,7 +438,7 @@ export default function WorkflowsPage() {
       } catch {}
     }, 4000);
     return () => clearInterval(iv);
-  }, [runId]);
+  }, [runId, runStatus]);
 
   const handleRun = async () => {
     if (edSteps.length === 0 || !edSteps.some(s => s.task.trim())) return;

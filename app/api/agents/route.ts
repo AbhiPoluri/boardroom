@@ -4,9 +4,36 @@ import { getAllAgents, createAgent, getActiveAgentsCount, getPendingTasksCount, 
 import { spawnAgent } from '@/lib/spawner';
 import { startMonitor } from '@/lib/agent-monitor';
 import { startCronScheduler } from '@/lib/cron-scheduler';
+import { getRateLimitConfig } from '@/lib/rate-limit-config';
 import type { SpawnAgentRequest, ImportAgentRequest } from '@/types';
 import fs from 'fs';
 import path from 'path';
+
+// Per-IP rate limiter for agent spawn requests
+const agentRateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function checkAgentRateLimit(ip: string): boolean {
+  const { rateLimit } = getRateLimitConfig();
+  const now = Date.now();
+
+  // Cleanup stale entries to prevent unbounded map growth
+  if (agentRateLimitMap.size > 10000) {
+    for (const [key, val] of agentRateLimitMap) {
+      if (now - val.windowStart > 2 * RATE_LIMIT_WINDOW_MS) {
+        agentRateLimitMap.delete(key);
+      }
+    }
+  }
+
+  const entry = agentRateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    agentRateLimitMap.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= rateLimit;
+}
 
 // Start autonomous agent monitor (idempotent — safe to call on every request)
 startMonitor();
@@ -14,9 +41,11 @@ startCronScheduler();
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const agents = getAllAgents();
+    const limitParam = req.nextUrl.searchParams.get('limit');
+    const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10))) : 200;
+    const agents = getAllAgents(limit);
     const agentTokens = getAllTokenUsage();
     const stats = {
       active: getActiveAgentsCount(),
@@ -32,11 +61,36 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown';
+    if (!checkAgentRateLimit(ip)) {
+      const { rateLimit } = getRateLimitConfig();
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Max ${rateLimit} agent spawn requests per minute.` },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const { task, type = 'claude', repo, useGitIsolation, name, model, depends_on } = body as SpawnAgentRequest & { useGitIsolation?: boolean; depends_on?: string[] };
 
     if (!task) {
       return NextResponse.json({ error: 'task is required' }, { status: 400 });
+    }
+    if (task.length > 50000) {
+      return NextResponse.json({ error: 'task exceeds maximum length of 50000 characters' }, { status: 400 });
+    }
+    if (name && name.length > 200) {
+      return NextResponse.json({ error: 'name exceeds maximum length of 200 characters' }, { status: 400 });
+    }
+
+    // Concurrency limit: reject if too many active agents
+    const { maxAgents } = getRateLimitConfig();
+    const activeCount = getActiveAgentsCount();
+    if (activeCount >= maxAgents) {
+      return NextResponse.json(
+        { error: `Too many active agents (${activeCount}/${maxAgents}). Wait for some to finish before spawning more.` },
+        { status: 429 }
+      );
     }
 
     const id = uuidv4();

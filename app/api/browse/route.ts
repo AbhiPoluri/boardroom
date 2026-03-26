@@ -23,6 +23,10 @@ export async function GET(req: NextRequest) {
   const home = os.homedir();
   const resolved = path.resolve(dir);
 
+  if (!resolved.startsWith(home + path.sep) && resolved !== home) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 });
+  }
+
   const entries: BrowseEntry[] = [];
   const HIDDEN = new Set(['.git', 'node_modules', '.next', 'dist', '.DS_Store', '__pycache__', '.venv', 'Library', '.Trash', '.cache', '.npm', '.nvm']);
 

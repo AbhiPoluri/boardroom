@@ -107,7 +107,7 @@ export default function LogsPage() {
       const logsData = await logsRes.json();
       const statsData = await statsRes.json();
       setLogs(logsData.logs || []);
-      setStats(statsData.stats || null);
+      setStats(statsData || null);
     } catch {
       // silently fail
     } finally {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Play, Copy, Check, ChevronDown, ChevronRight,
   Bot, Workflow, Clock, Terminal, Send, GitBranch,
@@ -707,8 +707,12 @@ function EndpointCard({ ep, baseUrl }: { ep: Endpoint; baseUrl: string }) {
 }
 
 export default function ApiDocsPage() {
-  const [baseUrl, setBaseUrl] = useState(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  const [baseUrl, setBaseUrl] = useState('');
   const [expandedGroup, setExpandedGroup] = useState<string | null>('agents');
+
+  useEffect(() => {
+    setBaseUrl(window.location.origin);
+  }, []);
 
   const totalEndpoints = API_GROUPS.reduce((sum, g) => sum + g.endpoints.length, 0);
 
@@ -716,7 +720,7 @@ export default function ApiDocsPage() {
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
-          <SubNav tabs={[{ label: 'setup', href: '/setup', active: false }, { label: 'api', href: '/api-docs', active: true }, { label: 'branches', href: '/branches', active: false }]} />
+          <SubNav tabs={[{ label: 'setup', href: '/setup', active: false }, { label: 'settings', href: '/settings', active: false }, { label: 'api', href: '/api-docs', active: true }, { label: 'branches', href: '/branches', active: false }]} />
           <h1 className="font-mono text-sm text-zinc-100">api reference</h1>
           <Separator orientation="vertical" className="h-4" />
           <span className="text-[11px] font-mono text-zinc-500">{totalEndpoints} endpoints</span>

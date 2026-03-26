@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
-
-const execAsync = promisify(exec);
+import * as os from 'os';
+import * as path from 'path';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -14,8 +13,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [] });
   }
 
+  // Home directory guard — prevent path traversal outside home
+  const resolvedRepo = path.resolve(repo);
+  const homeDir = os.homedir();
+  if (!resolvedRepo.startsWith(homeDir + path.sep) && resolvedRepo !== homeDir) {
+    return NextResponse.json({ error: 'repo must be under home directory' }, { status: 403 });
+  }
+
   // Basic path safety check
-  if (!fs.existsSync(repo)) {
+  if (!fs.existsSync(resolvedRepo)) {
     return NextResponse.json({ error: 'repo not found', results: [] }, { status: 400 });
   }
 
@@ -32,26 +38,29 @@ export async function GET(req: NextRequest) {
   }
 
   const includeFlags = [
-    '--include="*.ts"',
-    '--include="*.tsx"',
-    '--include="*.js"',
-    '--include="*.jsx"',
-    '--include="*.py"',
-    '--include="*.rs"',
-    '--include="*.go"',
-    '--include="*.java"',
-    '--include="*.cs"',
-    '--include="*.rb"',
-  ].join(' ');
+    '--include=*.ts',
+    '--include=*.tsx',
+    '--include=*.js',
+    '--include=*.jsx',
+    '--include=*.py',
+    '--include=*.rs',
+    '--include=*.go',
+    '--include=*.java',
+    '--include=*.cs',
+    '--include=*.rb',
+  ];
 
   try {
     // Find files containing the search term
-    const { stdout: filesOut } = await execAsync(
-      `grep -rl "${primary}" "${repo}" ${includeFlags} 2>/dev/null | head -10`,
-      { timeout: 10000 }
-    );
+    let filesOut = '';
+    try {
+      filesOut = execFileSync('grep', ['-rl', primary, resolvedRepo, ...includeFlags], { timeout: 10000, encoding: 'utf-8' });
+    } catch (e: any) {
+      // grep exits 1 when no matches found — that's fine
+      if (e.status !== 1) throw e;
+    }
 
-    const files = filesOut.trim().split('\n').filter(Boolean);
+    const files = filesOut.trim().split('\n').filter(Boolean).slice(0, 10);
     if (files.length === 0) {
       return NextResponse.json({ results: [] });
     }
@@ -60,12 +69,14 @@ export async function GET(req: NextRequest) {
 
     for (const file of files) {
       try {
-        const { stdout: grepOut } = await execAsync(
-          `grep -n "${primary}" "${file}" 2>/dev/null | head -3`,
-          { timeout: 5000 }
-        );
+        let grepOut = '';
+        try {
+          grepOut = execFileSync('grep', ['-n', primary, file], { timeout: 5000, encoding: 'utf-8' });
+        } catch (e: any) {
+          if (e.status !== 1) throw e;
+        }
 
-        const lines = grepOut.trim().split('\n').filter(Boolean);
+        const lines = grepOut.trim().split('\n').filter(Boolean).slice(0, 3);
         for (const grepLine of lines) {
           const colonIdx = grepLine.indexOf(':');
           if (colonIdx === -1) continue;
@@ -73,14 +84,13 @@ export async function GET(req: NextRequest) {
           if (isNaN(lineNum)) continue;
           const content = grepLine.slice(colonIdx + 1);
 
-          // Get 3 lines of context around the match
+          // Get 3 lines of context around the match using fs.readFileSync
           let context = content;
           try {
-            const { stdout: ctxOut } = await execAsync(
-              `sed -n "${Math.max(1, lineNum - 1)},${lineNum + 1}p" "${file}" 2>/dev/null`,
-              { timeout: 3000 }
-            );
-            context = ctxOut || content;
+            const allLines = fs.readFileSync(file, 'utf-8').split('\n');
+            const start = Math.max(0, lineNum - 2);
+            const end = Math.min(allLines.length, lineNum + 1);
+            context = allLines.slice(start, end).join('\n') || content;
           } catch {}
 
           results.push({ file, line: lineNum, context });

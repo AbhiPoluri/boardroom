@@ -2,6 +2,33 @@ import { NextRequest } from 'next/server';
 import { runOrchestrator, OrchestratorEvent } from '@/lib/orchestrator';
 import { getAgentById, getLogsForAgent, saveChatMessage, getChatHistory, clearChatHistory, getAllAgents } from '@/lib/db';
 import { cleanLogLine } from '@/lib/strip-tui';
+import { getRateLimitConfig } from '@/lib/rate-limit-config';
+
+// Simple in-memory rate limiter (limit is read dynamically from config)
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function checkRateLimit(ip: string): boolean {
+  const { rateLimit } = getRateLimitConfig();
+  const now = Date.now();
+
+  // Cleanup stale entries to prevent unbounded map growth
+  if (rateLimitMap.size > 10000) {
+    for (const [key, val] of rateLimitMap) {
+      if (now - val.windowStart > 2 * RATE_LIMIT_WINDOW_MS) {
+        rateLimitMap.delete(key);
+      }
+    }
+  }
+
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= rateLimit;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -54,10 +81,26 @@ function buildContinuationMessage(spawnedIds: string[]): string {
 }
 
 export async function POST(req: NextRequest) {
-  const { message } = await req.json();
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown';
+  if (!checkRateLimit(ip)) {
+    const { rateLimit } = getRateLimitConfig();
+    return new Response(JSON.stringify({ error: `Rate limit exceeded. Max ${rateLimit} requests per minute.` }), { status: 429 });
+  }
+
+  let message: string;
+  try {
+    const body = await req.json();
+    message = body.message;
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
+  }
 
   if (!message?.trim()) {
     return new Response(JSON.stringify({ error: 'message required' }), { status: 400 });
+  }
+
+  if (message.length > 10000) {
+    return new Response(JSON.stringify({ error: 'message too long' }), { status: 400 });
   }
 
   const encoder = new TextEncoder();

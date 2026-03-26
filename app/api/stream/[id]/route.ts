@@ -4,7 +4,7 @@ import { getAgentById, getLogsSince, getLogsForAgent } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -80,11 +80,18 @@ export async function GET(
         }
       }, 30000);
 
-      // Cleanup when stream is cancelled
-      return () => {
+      // Cleanup function — called on stream cancel (ReadableStream spec) and on client disconnect
+      const cleanup = () => {
         clearInterval(interval);
         clearInterval(heartbeat);
+        try { controller.close(); } catch {}
       };
+
+      // Wire abort signal so timers are cleared when the HTTP request is cancelled
+      req.signal.addEventListener('abort', cleanup, { once: true });
+
+      // Also return cleanup for the ReadableStream cancel() path
+      return cleanup;
     },
   });
 

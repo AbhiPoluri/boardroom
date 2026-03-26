@@ -42,8 +42,11 @@ RUN mkdir -p /data
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV DB_PATH=/data/boardroom.db
-ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
+# Set NEXT_PUBLIC_APP_URL at runtime via docker-compose or -e flag (empty = relative URLs)
+ENV NEXT_PUBLIC_APP_URL=
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 CMD ["npm", "start"]

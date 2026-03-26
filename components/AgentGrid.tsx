@@ -132,33 +132,29 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [], 
 
   return (
     <div
-      className={`group relative flex flex-col bg-zinc-900 border rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] ${
+      className={`group relative flex flex-col bg-zinc-900 border rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] cursor-pointer ${
         selected ? 'border-emerald-600' : `${borderColor} hover:border-zinc-600`
       }`}
       style={{ height: cardHeight }}
+      onClick={() => {
+        if (onToggleSelect) onToggleSelect(agent.id);
+      }}
     >
+      {/* Select indicator bar — top edge glows when selected, shows hint on hover */}
+      {onToggleSelect && (
+        <div className={`absolute top-0 left-0 right-0 h-1 transition-all ${
+          selected
+            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+            : 'bg-transparent group-hover:bg-zinc-600'
+        }`} />
+      )}
+
       {/* Active pulse */}
       {isActive && !terminalMode && (
         <span className="absolute top-3 right-10 flex h-2.5 w-2.5 pointer-events-none">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
         </span>
-      )}
-
-      {/* Selection checkbox — visible on hover or when selected */}
-      {onToggleSelect && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onToggleSelect(agent.id); }}
-          className={`absolute top-2 left-2 z-10 w-4 h-4 rounded border flex items-center justify-center transition-all ${
-            selected
-              ? 'bg-emerald-600 border-emerald-500 opacity-100'
-              : 'bg-zinc-800 border-zinc-600 opacity-0 group-hover:opacity-100'
-          }`}
-          title={selected ? 'Deselect' : 'Select'}
-          aria-label={selected ? 'Deselect agent' : 'Select agent'}
-        >
-          {selected && <span className="text-white text-[8px] leading-none">✓</span>}
-        </button>
       )}
 
       {/* Top controls (always visible) */}

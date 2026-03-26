@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents, updateWorkflowRunDetail, getWorkflowRunById } from './db';
+import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents, updateWorkflowRunDetail, getWorkflowRunById, getRecentWorkflowRuns } from './db';
 import { spawnAgent } from './spawner';
 import { loadAgentConfigs } from '@/lib/agent-configs';
 import type { AgentType } from '@/types';
@@ -51,6 +51,24 @@ const activeRuns = new Map<string, {
   /** When the run finished (for auto-cleanup) */
   finishedAt?: number;
 }>();
+
+/** On module load, mark any workflow runs that were left in 'running' state as errored.
+ *  These are orphaned runs from a previous server process that can never complete. */
+function recoverStaleWorkflowRuns(): void {
+  try {
+    const stale = (getRecentWorkflowRuns(100) as any[]).filter((r: any) => r.status === 'running');
+    for (const r of stale) {
+      updateWorkflowRun(r.id, 'error', 'Server restarted during execution');
+    }
+    if (stale.length > 0) {
+      console.log(`[workflow] Marked ${stale.length} stale run(s) as error (server restart)`);
+    }
+  } catch (err) {
+    console.error('[workflow] Failed to recover stale runs:', err);
+  }
+}
+
+recoverStaleWorkflowRuns();
 
 /** Strip control characters that break JSON serialization */
 function sanitize(s: string): string {

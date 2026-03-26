@@ -23,6 +23,7 @@ export function middleware(request: NextRequest) {
   // If no API key is configured, allow all requests (dev mode)
   const apiKey = process.env.BOARDROOM_API_KEY;
   if (!apiKey) {
+    console.warn('[boardroom] WARNING: BOARDROOM_API_KEY not set — all API routes are unprotected');
     return NextResponse.next();
   }
 

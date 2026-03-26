@@ -66,6 +66,17 @@ function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+/** Sanitize a YAML scalar value: strip newlines, quote if needed */
+function yamlScalar(value: string): string {
+  // Strip newlines to prevent frontmatter injection
+  const sanitized = value.replace(/\r?\n|\r/g, ' ');
+  // Quote if value contains characters that could break bare YAML scalars
+  if (/[:#\[\]{}&*!|>'"%@`,]/.test(sanitized) || sanitized.startsWith('-') || sanitized.includes('---')) {
+    return `"${sanitized.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+  return sanitized;
+}
+
 /** Save an agent config as a .md file */
 export function saveAgentConfig(opts: { name: string; type: AgentType; model?: string; description: string; prompt: string }): AgentConfig {
   if (!fs.existsSync(AGENTS_DIR)) fs.mkdirSync(AGENTS_DIR, { recursive: true });
@@ -73,9 +84,9 @@ export function saveAgentConfig(opts: { name: string; type: AgentType; model?: s
   const slug = toSlug(opts.name);
   const filePath = path.join(AGENTS_DIR, `${slug}.md`);
 
-  const lines = [`---`, `name: ${opts.name}`, `type: ${opts.type}`];
+  const lines = [`---`, `name: ${yamlScalar(opts.name)}`, `type: ${opts.type}`];
   if (opts.model) lines.push(`model: ${opts.model}`);
-  lines.push(`description: ${opts.description}`, `---`, '', opts.prompt, '');
+  lines.push(`description: ${yamlScalar(opts.description)}`, `---`, '', opts.prompt, '');
 
   fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
 
@@ -84,8 +95,12 @@ export function saveAgentConfig(opts: { name: string; type: AgentType; model?: s
 
 /** Delete an agent config by slug */
 export function deleteAgentConfig(slug: string): void {
-  const filePath = path.join(AGENTS_DIR, `${slug}.md`);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  const resolved = path.resolve(AGENTS_DIR, `${slug}.md`);
+  // Guard against path traversal: resolved path must stay inside AGENTS_DIR
+  if (!resolved.startsWith(AGENTS_DIR + path.sep)) {
+    throw new Error('Invalid slug: path traversal detected');
+  }
+  if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
 }
 
 /** Load a single agent config by slug */

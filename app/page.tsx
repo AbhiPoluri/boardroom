@@ -27,11 +27,13 @@ function AnimatedNumber({ value, prefix = '', suffix = '', decimals = false }: {
 }
 
 function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse bg-zinc-800 rounded ${className}`} />;
+  return <div className={`animate-pulse bg-[var(--br-bg-hover)] rounded ${className}`} />;
 }
 import { AgentGrid } from '@/components/AgentGrid';
 import { SpawnModal } from '@/components/SpawnModal';
+import { OnboardingTour } from '@/components/OnboardingTour';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/lib/toast';
 import {
   GitBranch, Network,
   ChevronDown, ChevronRight,
@@ -68,6 +70,20 @@ function formatTokens(n: number): string {
 export default function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [stats, setStats] = useState<Stats>({ active: 0, pending_tasks: 0, logs_today: 0 });
+
+  // First-run redirect: check if Claude CLI is installed; redirect to /setup if not
+  useEffect(() => {
+    if (sessionStorage.getItem('boardroom:setup-checked')) return;
+    sessionStorage.setItem('boardroom:setup-checked', '1');
+    fetch('/api/setup-check')
+      .then(r => r.json())
+      .then((data: Record<string, { installed: boolean }>) => {
+        if (!data.claude?.installed) {
+          window.location.href = '/setup';
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [tokens, setTokens] = useState<TokenStats>({ input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0 });
   const [agentTokens, setAgentTokens] = useState<Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>>({});
   const [velocity, setVelocity] = useState<number[]>([]);
@@ -90,6 +106,8 @@ export default function Dashboard() {
   const [repoFilter, setRepoFilter] = useState<string>('all');
   const [groupMode, setGroupMode] = useState<'flat' | 'repo' | 'status'>('flat');
   const [filterPresets, setFilterPresets] = useState<Record<string, { filter: string; sortBy: string; searchQuery: string }>>({});
+  const [showPresetInput, setShowPresetInput] = useState(false);
+  const [presetName, setPresetName] = useState('');
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -131,27 +149,51 @@ export default function Dashboard() {
     if (presets) { try { setFilterPresets(JSON.parse(presets)); } catch {} }
   }, []);
 
+  const intervalMsRef = useRef(8000);
   useEffect(() => {
     fetchAgents();
-    // Poll faster when agents are active, slower when idle
-    const interval = setInterval(fetchAgents, stats.active > 0 ? 3000 : 8000);
-    return () => clearInterval(interval);
-  }, [fetchAgents, stats.active]);
-
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setSpawnOpen(true);
-      }
-      if (e.key === 'Escape') {
-        setSpawnOpen(false);
-      }
+    // Poll faster when agents are active, slower when idle.
+    // Using setTimeout recursion so each tick reads the current intervalMsRef.current,
+    // allowing the interval to adapt without restarting the effect.
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      fetchAgents();
+      timeoutId = setTimeout(tick, intervalMsRef.current);
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    timeoutId = setTimeout(tick, intervalMsRef.current);
+    return () => clearTimeout(timeoutId);
+  }, [fetchAgents]);
+
+  // Keep intervalMsRef in sync with active agent count without touching the effect deps.
+  useEffect(() => {
+    intervalMsRef.current = stats.active > 0 ? 3000 : 8000;
+  }, [stats.active]);
+
+  // Listen for spawn shortcut dispatched by AppShell (Cmd+Shift+N)
+  useEffect(() => {
+    const handler = () => setSpawnOpen(true);
+    window.addEventListener('boardroom:spawn', handler);
+    return () => window.removeEventListener('boardroom:spawn', handler);
   }, []);
+
+  // Detect agent status transitions to 'done' for toast notifications
+  const prevAgentStatusRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const prev = prevAgentStatusRef.current;
+    for (const agent of agents) {
+      const prevStatus = prev[agent.id];
+      if (prevStatus && (prevStatus === 'running' || prevStatus === 'spawning') && agent.status === 'done') {
+        toast.success(`agent "${agent.name}" finished`);
+      }
+      if (prevStatus && (prevStatus === 'running' || prevStatus === 'spawning') && agent.status === 'error') {
+        toast.error(`agent "${agent.name}" errored`);
+      }
+    }
+    // Rebuild the map
+    const next: Record<string, string> = {};
+    for (const agent of agents) next[agent.id] = agent.status;
+    prevAgentStatusRef.current = next;
+  }, [agents]);
 
   const handleSpawn = async (data: { task: string; type: AgentType; repo?: string; useGitIsolation?: boolean; name?: string; model?: string; depends_on?: string[] }) => {
     const res = await fetch('/api/agents', {
@@ -163,6 +205,9 @@ export default function Dashboard() {
       const err = await res.json();
       throw new Error(err.error || 'Failed to spawn agent');
     }
+    const spawned = await res.json();
+    const agentName = data.name || spawned?.agent?.name || 'agent';
+    toast.success(`spawned ${agentName}`);
     await fetchAgents();
   };
 
@@ -290,30 +335,30 @@ export default function Dashboard() {
   const depsAgents = agents.filter(a => (a as any).depends_on?.length > 0);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950 text-zinc-100">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--br-bg-primary)] text-[var(--br-text-primary)]">
         {/* Header */}
-        <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
+        <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-[var(--br-border)] bg-[var(--br-bg-secondary)]/40">
           <div className="flex items-center gap-3">
             <SubNav tabs={[{ label: 'agents', href: '/', active: true }, { label: 'logs', href: '/logs', active: false }]} />
-            <h1 className="font-mono text-base font-semibold tracking-tight text-zinc-100">agent fleet</h1>
+            <h1 className="font-mono text-base font-semibold tracking-tight text-[var(--br-text-primary)]">agent fleet</h1>
             <span
               className={`inline-block h-2 w-2 rounded-full ${
-                hasActive ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-700'
+                hasActive ? 'bg-emerald-400 animate-pulse' : 'bg-[var(--br-text-muted)]'
               }`}
               title={hasActive ? 'Agents active' : 'No active agents'}
               role="status"
             />
-            <span className="w-px h-3.5 bg-zinc-700" />
+            <span className="w-px h-3.5 bg-[var(--br-border)]" />
             <div className="flex items-center gap-3 text-[11px] font-mono">
               <span>
-                <span className="text-zinc-400 font-light">active </span>
-                <span className={`font-medium ${stats.active > 0 ? 'text-emerald-400' : 'text-zinc-100'}`}>
+                <span className="text-[var(--br-text-secondary)] font-light">active </span>
+                <span className={`font-medium ${stats.active > 0 ? 'text-emerald-400' : 'text-[var(--br-text-primary)]'}`}>
                   {stats.active}
                 </span>
               </span>
               <span>
-                <span className="text-zinc-400 font-light">pending </span>
-                <span className={`font-medium ${stats.pending_tasks > 0 ? 'text-amber-400' : 'text-zinc-100'}`}>
+                <span className="text-[var(--br-text-secondary)] font-light">pending </span>
+                <span className={`font-medium ${stats.pending_tasks > 0 ? 'text-amber-400' : 'text-[var(--br-text-primary)]'}`}>
                   {stats.pending_tasks}
                 </span>
               </span>
@@ -348,7 +393,7 @@ export default function Dashboard() {
               }}
               size="sm"
               variant="ghost"
-              className="font-mono text-zinc-600 hover:text-red-400 text-[11px] px-1.5"
+              className="font-mono text-[var(--br-text-muted)] hover:text-[var(--br-danger)] text-[11px] px-1.5"
               title="Reset session"
             >
               reset
@@ -357,11 +402,11 @@ export default function Dashboard() {
               <Button
                 onClick={() => setSpawnOpen(true)}
                 size="sm"
-                className="font-mono bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] px-2"
+                className="font-mono bg-[var(--br-accent)] hover:bg-[var(--br-accent-hover)] text-white text-[11px] px-2"
               >
                 + spawn
               </Button>
-              <span className="text-[9px] font-mono text-zinc-700">&#8984;K</span>
+              <span className="text-[9px] font-mono text-[var(--br-text-muted)]">&#8984;K</span>
             </div>
           </div>
         </header>
@@ -376,15 +421,15 @@ export default function Dashboard() {
 
           {/* Agents header */}
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-mono text-xs text-zinc-500 uppercase tracking-wider">
+            <h2 className="font-mono text-xs text-[var(--br-text-muted)] uppercase tracking-wider">
               agents{' '}
-              <span className="text-zinc-700">
+              <span className="text-[var(--br-text-muted)]">
                 ({filteredAgents.length !== agents.length
                   ? `${filteredAgents.length}/`
                   : ''}{agents.length})
               </span>
             </h2>
-            <button onClick={fetchAgents} className="text-xs font-mono text-zinc-700 hover:text-zinc-400 transition-colors">
+            <button onClick={fetchAgents} className="text-xs font-mono text-[var(--br-text-muted)] hover:text-[var(--br-text-secondary)] transition-colors">
               refresh
             </button>
           </div>
@@ -398,8 +443,8 @@ export default function Dashboard() {
                 aria-pressed={filter === f}
                 className={`px-3 py-1 rounded-full text-xs font-mono transition-colors ${
                   filter === f
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    ? 'bg-[var(--br-accent)] text-white'
+                    : 'bg-[var(--br-bg-hover)] text-[var(--br-text-secondary)] hover:bg-[var(--br-bg-hover)]'
                 }`}
               >
                 {f}{f !== 'all' && ` (${countForFilter(f)})`}
@@ -409,7 +454,7 @@ export default function Dashboard() {
               <select
                 value={repoFilter}
                 onChange={e => setRepoFilter(e.target.value)}
-                className="bg-zinc-900 border border-zinc-700 rounded-full px-2 py-1 text-xs font-mono text-zinc-400 focus:outline-none focus:border-zinc-500"
+                className="bg-[var(--br-bg-secondary)] border border-[var(--br-border)] rounded-full px-2 py-1 text-xs font-mono text-[var(--br-text-secondary)] focus:outline-none focus:border-[var(--br-text-muted)]"
                 title="Filter by repo"
               >
                 <option value="all">all repos</option>
@@ -429,12 +474,12 @@ export default function Dashboard() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="search agents..."
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1 text-xs font-mono text-zinc-300 placeholder-zinc-600 w-48 focus:outline-none focus:border-zinc-500"
+                className="bg-[var(--br-bg-secondary)] border border-[var(--br-border)] rounded-lg px-3 py-1 text-xs font-mono text-[var(--br-text-primary)] placeholder-[var(--br-text-muted)] w-48 focus:outline-none focus:border-[var(--br-text-muted)]"
               />
               <select
                 value={sortBy}
                 onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-zinc-400 focus:outline-none"
+                className="bg-[var(--br-bg-secondary)] border border-[var(--br-border)] rounded-lg px-2 py-1 text-xs font-mono text-[var(--br-text-secondary)] focus:outline-none"
               >
                 <option value="newest">newest first</option>
                 <option value="oldest">oldest first</option>
@@ -457,50 +502,88 @@ export default function Dashboard() {
               >
                 {groupMode === 'flat' ? 'flat' : groupMode === 'repo' ? 'by repo' : 'by status'}
               </button>
-              <button
-                onClick={() => {
-                  const name = prompt('Save filter preset as:');
-                  if (name?.trim()) {
-                    const presets = { ...filterPresets };
-                    presets[name.trim()] = { filter, sortBy, searchQuery };
-                    setFilterPresets(presets);
-                    localStorage.setItem('boardroom:filterPresets', JSON.stringify(presets));
-                  }
-                }}
-                className="px-2 py-1 rounded-lg text-xs font-mono bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
-                title="Save current filters as preset"
-              >
-                {Object.keys(filterPresets).length > 0 ? '★' : '☆'}
-              </button>
+              {showPresetInput ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    autoFocus
+                    value={presetName}
+                    onChange={e => setPresetName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && presetName.trim()) {
+                        const presets = { ...filterPresets };
+                        presets[presetName.trim()] = { filter, sortBy, searchQuery };
+                        setFilterPresets(presets);
+                        localStorage.setItem('boardroom:filterPresets', JSON.stringify(presets));
+                        setPresetName('');
+                        setShowPresetInput(false);
+                      } else if (e.key === 'Escape') {
+                        setPresetName('');
+                        setShowPresetInput(false);
+                      }
+                    }}
+                    placeholder="preset name..."
+                    className="bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs font-mono text-zinc-300 placeholder-zinc-600 w-28 focus:outline-none focus:border-zinc-400"
+                  />
+                  <button
+                    onClick={() => {
+                      if (presetName.trim()) {
+                        const presets = { ...filterPresets };
+                        presets[presetName.trim()] = { filter, sortBy, searchQuery };
+                        setFilterPresets(presets);
+                        localStorage.setItem('boardroom:filterPresets', JSON.stringify(presets));
+                      }
+                      setPresetName('');
+                      setShowPresetInput(false);
+                    }}
+                    className="px-1.5 py-1 rounded text-xs font-mono bg-emerald-700 text-white hover:bg-emerald-600 transition-colors"
+                  >
+                    save
+                  </button>
+                  <button
+                    onClick={() => { setPresetName(''); setShowPresetInput(false); }}
+                    className="px-1.5 py-1 rounded text-xs font-mono bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowPresetInput(true)}
+                  className="px-2 py-1 rounded-lg text-xs font-mono bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-colors"
+                  title="Save current filters as preset"
+                >
+                  {Object.keys(filterPresets).length > 0 ? '★' : '☆'}
+                </button>
+              )}
             </div>
           </div>
 
           {/* Dependency graph — shown inline below filter bar when any agent has deps */}
           {depsAgents.length > 0 && (
-            <div className="mb-3 border border-zinc-800 rounded-lg overflow-hidden">
+            <div className="mb-3 border border-[var(--br-border)] rounded-lg overflow-hidden">
               <button
                 onClick={() => setShowDepGraph(d => !d)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 bg-zinc-900/40 hover:bg-zinc-900 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-3 py-1.5 bg-[var(--br-bg-secondary)]/40 hover:bg-[var(--br-bg-secondary)] transition-colors text-left"
               >
-                {showDepGraph ? <ChevronDown className="w-3 h-3 text-zinc-600" /> : <ChevronRight className="w-3 h-3 text-zinc-600" />}
-                <span className="font-mono text-[10px] text-zinc-500">show deps ({depsAgents.length})</span>
+                {showDepGraph ? <ChevronDown className="w-3 h-3 text-[var(--br-text-muted)]" /> : <ChevronRight className="w-3 h-3 text-[var(--br-text-muted)]" />}
+                <span className="font-mono text-[10px] text-[var(--br-text-muted)]">show deps ({depsAgents.length})</span>
               </button>
               {showDepGraph && (
-                <div className="px-3 py-2 font-mono text-[10px] space-y-0.5 bg-zinc-950/40">
+                <div className="px-3 py-2 font-mono text-[10px] space-y-0.5 bg-[var(--br-bg-primary)]/40">
                   {depsAgents.map(a => (
                     ((a as any).depends_on as string[]).map((depId: string) => {
                       const depAgent = agents.find(x => x.id === depId);
                       const depName = depAgent?.name ?? depId.slice(0, 8);
                       return (
-                        <div key={`${depId}->${a.id}`} className="flex items-center gap-1.5 text-zinc-500">
-                          <span className="text-zinc-400">{depName}</span>
-                          <span className="text-zinc-700">→</span>
-                          <span className="text-zinc-300">{a.name}</span>
+                        <div key={`${depId}->${a.id}`} className="flex items-center gap-1.5 text-[var(--br-text-secondary)]">
+                          <span className="text-[var(--br-text-secondary)]">{depName}</span>
+                          <span className="text-[var(--br-text-muted)]">→</span>
+                          <span className="text-[var(--br-text-primary)]">{a.name}</span>
                           {depAgent && (
                             <span className={`ml-1 text-[9px] ${
                               depAgent.status === 'done' ? 'text-emerald-600' :
                               depAgent.status === 'running' ? 'text-emerald-400' :
-                              depAgent.status === 'error' ? 'text-red-400' : 'text-zinc-600'
+                              depAgent.status === 'error' ? 'text-red-400' : 'text-[var(--br-text-muted)]'
                             }`}>({depAgent.status})</span>
                           )}
                         </div>
@@ -686,6 +769,7 @@ export default function Dashboard() {
         </span>
       </div>
 
+      <OnboardingTour />
       <SpawnModal open={spawnOpen} onClose={() => setSpawnOpen(false)} onSpawn={handleSpawn} onImport={handleImport} existingAgents={agents.map(a => ({ id: a.id, name: a.name, status: a.status, created_at: a.created_at }))} />
     </div>
   );

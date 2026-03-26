@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { toast as globalToast } from '@/lib/toast';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -559,6 +560,11 @@ export default function WorkspacePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, action }),
     });
+    if (action === 'approve') {
+      globalToast.success('PR approved & merged');
+    } else {
+      globalToast.info('PR rejected');
+    }
     fetchPRs();
     setSelectedPR(null);
     setPrDiff([]);
@@ -1510,6 +1516,7 @@ export default function WorkspacePage() {
                 <div className="text-center py-12">
                   <Diff className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
                   <p className="font-mono text-xs text-zinc-600">no changes detected</p>
+                  <p className="font-mono text-[10px] text-zinc-700 mt-1">make edits or run an agent to see a diff here</p>
                 </div>
               )}
 
@@ -1609,6 +1616,9 @@ export default function WorkspacePage() {
                   <GitPullRequest className="w-8 h-8 text-zinc-800 mx-auto mb-3" />
                   <p className="font-mono text-xs text-zinc-600">
                     {pendingPRs.length > 0 ? `${pendingPRs.length} pending — select one to review` : 'no pending push requests'}
+                  </p>
+                  <p className="font-mono text-[10px] text-zinc-700 mt-1">
+                    {pendingPRs.length > 0 ? 'click a request in the sidebar to open it' : 'agents will create push requests when they finish work'}
                   </p>
                 </div>
               </div>
@@ -1851,7 +1861,7 @@ export default function WorkspacePage() {
                 </>
               );
             })()}
-            <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-zinc-950/90 to-transparent pointer-events-none" />
+            <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[var(--br-bg-secondary)] to-transparent pointer-events-none" />
           </div>
         )}
 

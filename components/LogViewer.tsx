@@ -31,6 +31,7 @@ export function LogViewer({ agentId, initialLogs = [], agentStatus, summary, age
   const [autoScroll, setAutoScroll] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const esRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const handleScroll = useCallback(() => {
@@ -97,13 +98,17 @@ export function LogViewer({ agentId, initialLogs = [], agentStatus, summary, age
         setConnected(false);
         es.close();
         // Reconnect after 3s
-        setTimeout(connect, 3000);
+        reconnectTimerRef.current = setTimeout(connect, 3000);
       };
     };
 
     connect();
 
     return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       es?.close();
       esRef.current = null;
     };

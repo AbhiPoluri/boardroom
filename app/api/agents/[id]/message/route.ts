@@ -22,6 +22,9 @@ export async function POST(
     if (!message) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
+    if (message.length > 10000) {
+      return NextResponse.json({ error: 'message exceeds maximum length of 10000 characters' }, { status: 400 });
+    }
 
     // Try to send via stdin
     const sent = sendToAgent(id, message);

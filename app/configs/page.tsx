@@ -517,7 +517,7 @@ export default function ConfigsPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
-          <SubNav tabs={[{ label: 'personas', href: '/configs', active: true }, { label: 'skills', href: '/skills', active: false }]} />
+          <SubNav tabs={[{ label: 'personas', href: '/configs', active: true }, { label: 'skills', href: '/skills', active: false }, { label: 'marketplace', href: '/marketplace', active: false }]} />
           <h1 className="font-mono text-sm text-zinc-100">personas</h1>
           <span className="text-[10px] font-mono text-zinc-600">agents/*.md</span>
         </div>

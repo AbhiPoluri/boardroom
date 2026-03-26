@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   CheckCircle2, Circle, Copy, Check, Terminal,
   GitBranch, Package, Settings, Play, AlertTriangle,
@@ -118,32 +118,153 @@ interface CheckResult {
   node: string | null;
   git: string | null;
   claude: string | null;
+  codex: string | null;
+  opencode: string | null;
   loading: boolean;
   ran: boolean;
 }
+
+const ALL_CLIS = ['claude', 'codex', 'opencode'] as const;
+type CliKey = typeof ALL_CLIS[number];
+
+const CLI_META: Record<CliKey, { label: string; desc: string; install: string }> = {
+  claude: {
+    label: 'Claude Code',
+    desc: 'Anthropic\'s agentic CLI for code generation and orchestration.',
+    install: 'npm install -g @anthropic-ai/claude-code',
+  },
+  codex: {
+    label: 'Codex',
+    desc: 'OpenAI\'s coding agent CLI. Requires an OpenAI API key.',
+    install: 'npm install -g @openai/codex',
+  },
+  opencode: {
+    label: 'OpenCode',
+    desc: 'Open-source coding agent. See opencode.ai for install instructions.',
+    install: 'opencode',
+  },
+};
+
+function CliCard({
+  cliKey,
+  check,
+  enabled,
+  onToggle,
+}: {
+  cliKey: CliKey;
+  check: string | null;
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  const meta = CLI_META[cliKey];
+  const installed = check != null && !String(check).startsWith('unknown') && !String(check).startsWith('not found') && !String(check).startsWith('error');
+
+  return (
+    <div className="rounded-lg bg-zinc-950/60 border border-zinc-800/70 p-3 flex flex-col gap-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-mono text-[var(--br-text-muted)] uppercase tracking-wider">{cliKey}</span>
+          <span className="text-[12px] font-mono text-zinc-100">{meta.label}</span>
+        </div>
+        <button
+          onClick={onToggle}
+          className={`flex-shrink-0 relative inline-flex h-4 w-7 items-center rounded-full border transition-colors ${
+            enabled ? 'bg-emerald-500/80 border-emerald-500/50' : 'bg-zinc-700 border-zinc-600'
+          }`}
+          title={enabled ? 'Disable' : 'Enable'}
+        >
+          <span
+            className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+              enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+      </div>
+      <p className="text-[11px] font-mono text-zinc-500 leading-relaxed">{meta.desc}</p>
+      {check != null ? (
+        <Badge
+          variant="outline"
+          className={`self-start text-[10px] font-mono ${
+            installed
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+              : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+          }`}
+        >
+          {installed ? `installed · ${String(check)}` : 'not found'}
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="self-start text-[10px] font-mono bg-zinc-800 text-zinc-600 border-zinc-700">
+          not checked
+        </Badge>
+      )}
+      <div className="mt-0.5 rounded-md bg-zinc-900 border border-zinc-800/60 overflow-hidden">
+        <div className="flex items-center gap-2 px-2.5 py-1.5 pr-2">
+          <pre className="flex-1 text-[11px] font-mono text-zinc-400 whitespace-pre-wrap break-all leading-relaxed">{meta.install}</pre>
+          <CopyButton text={meta.install} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ENABLED_CLIS_KEY = 'boardroom:enabled-clis';
 
 export default function SetupPage() {
   const [check, setCheck] = useState<CheckResult>({
     node: null,
     git: null,
     claude: null,
+    codex: null,
+    opencode: null,
     loading: false,
     ran: false,
   });
 
+  const [enabledClis, setEnabledClis] = useState<CliKey[]>([...ALL_CLIS]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(ENABLED_CLIS_KEY);
+      if (stored) setEnabledClis(JSON.parse(stored) as CliKey[]);
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleCli = useCallback((key: CliKey) => {
+    setEnabledClis(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      try { localStorage.setItem(ENABLED_CLIS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
   const runCheck = useCallback(async () => {
-    setCheck({ node: null, git: null, claude: null, loading: true, ran: false });
+    setCheck({ node: null, git: null, claude: null, codex: null, opencode: null, loading: true, ran: false });
     try {
       const res = await fetch('/api/setup-check');
       if (res.ok) {
         const data = await res.json();
-        setCheck({ ...data, loading: false, ran: true });
+        const parse = (v: { installed?: boolean; version?: string } | string | null) => {
+          if (!v || typeof v === 'string') return v;
+          if (v.installed) return v.version || 'installed';
+          return 'not found';
+        };
+        setCheck({
+          node: parse(data.node),
+          git: parse(data.git),
+          claude: parse(data.claude),
+          codex: parse(data.codex),
+          opencode: parse(data.opencode),
+          loading: false,
+          ran: true,
+        });
       } else {
         // API doesn't exist yet — show a fallback message
         setCheck({
           node: 'unknown (API not available)',
           git: 'unknown (API not available)',
           claude: 'unknown (API not available)',
+          codex: 'unknown (API not available)',
+          opencode: 'unknown (API not available)',
           loading: false,
           ran: true,
         });
@@ -153,6 +274,8 @@ export default function SetupPage() {
         node: 'unknown (check your terminal)',
         git: 'unknown (check your terminal)',
         claude: 'unknown (check your terminal)',
+        codex: 'unknown (check your terminal)',
+        opencode: 'unknown (check your terminal)',
         loading: false,
         ran: true,
       });
@@ -161,7 +284,8 @@ export default function SetupPage() {
 
   const statusBadge = (val: string | null) => {
     if (!val) return null;
-    const isOk = !val.startsWith('unknown') && !val.startsWith('not found') && !val.startsWith('error');
+    const str = String(val);
+    const isOk = !str.startsWith('unknown') && !str.startsWith('not found') && !str.startsWith('error');
     return (
       <Badge
         variant="outline"
@@ -171,7 +295,7 @@ export default function SetupPage() {
             : 'bg-amber-500/10 text-amber-400 border-amber-500/25'
         }`}
       >
-        {val}
+        {str}
       </Badge>
     );
   };
@@ -181,7 +305,7 @@ export default function SetupPage() {
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-3">
-          <SubNav tabs={[{ label: 'setup', href: '/setup', active: true }, { label: 'api', href: '/api-docs', active: false }, { label: 'branches', href: '/branches', active: false }]} />
+          <SubNav tabs={[{ label: 'setup', href: '/setup', active: true }, { label: 'settings', href: '/settings', active: false }, { label: 'api', href: '/api-docs', active: false }, { label: 'branches', href: '/branches', active: false }]} />
           <Wrench className="w-3.5 h-3.5 text-zinc-400" />
           <h1 className="font-mono text-sm text-zinc-100">setup &amp; quickstart</h1>
           <Separator orientation="vertical" className="h-4" />
@@ -216,6 +340,16 @@ export default function SetupPage() {
             <span className="text-[11px] font-mono text-zinc-400">claude</span>
             {statusBadge(check.claude)}
           </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Terminal className="w-3 h-3 text-zinc-500" />
+            <span className="text-[11px] font-mono text-zinc-400">codex</span>
+            {statusBadge(check.codex)}
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Terminal className="w-3 h-3 text-zinc-500" />
+            <span className="text-[11px] font-mono text-zinc-400">opencode</span>
+            {statusBadge(check.opencode)}
+          </div>
         </div>
       )}
 
@@ -241,6 +375,24 @@ export default function SetupPage() {
               label="Claude Code CLI installed and authenticated"
               detail="Run `claude --version` to verify."
             />
+          </SectionCard>
+
+          {/* Agent CLIs */}
+          <SectionCard icon={Terminal} title="agent clis" badge="configure">
+            <p className="text-[12px] font-mono text-zinc-400">
+              Select which agent CLIs are enabled. Boardroom will only spawn agents for CLIs you have toggled on.
+            </p>
+            <div className="grid grid-cols-3 gap-4 mt-1">
+              {ALL_CLIS.map(key => (
+                <CliCard
+                  key={key}
+                  cliKey={key}
+                  check={check.ran ? (check[key as keyof CheckResult] as string | null) : null}
+                  enabled={enabledClis.includes(key)}
+                  onToggle={() => toggleCli(key)}
+                />
+              ))}
+            </div>
           </SectionCard>
 
           {/* Claude Code Setup */}
@@ -375,6 +527,18 @@ git log --oneline -5`} label="verify your repo" />
                   default: 'none',
                   desc: 'Path to a sandbox repo used as the default working directory for workflow agents.',
                 },
+                {
+                  key: 'BOARDROOM_RATE_LIMIT',
+                  type: 'number',
+                  default: '10',
+                  desc: 'Max chat/agent-spawn requests per minute per IP. Overridden by DB settings.',
+                },
+                {
+                  key: 'BOARDROOM_MAX_AGENTS',
+                  type: 'number',
+                  default: '20',
+                  desc: 'Max concurrent agents allowed. Overridden by DB settings.',
+                },
               ].map(({ key, type, default: def, desc }) => (
                 <div key={key} className="flex items-start gap-3">
                   <code className="text-[12px] font-mono text-emerald-300/90 flex-shrink-0 min-w-[200px] mt-0.5">{key}</code>
@@ -394,7 +558,9 @@ DB_PATH=.boardroom.db
 PORT=7391
 BOARDROOM_API_KEY=
 ANTHROPIC_API_KEY=sk-ant-...
-WORKFLOW_SANDBOX_REPO=/path/to/sandbox-repo`}
+WORKFLOW_SANDBOX_REPO=/path/to/sandbox-repo
+BOARDROOM_RATE_LIMIT=10
+BOARDROOM_MAX_AGENTS=20`}
               label=".env.local example"
             />
           </SectionCard>

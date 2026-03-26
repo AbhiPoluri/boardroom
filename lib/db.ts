@@ -10,7 +10,12 @@ let _db: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (_db) return _db;
 
-  _db = new Database(DB_PATH);
+  try {
+    _db = new Database(DB_PATH);
+  } catch (err) {
+    throw new Error(`Failed to open database at ${DB_PATH}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  _db.pragma('busy_timeout = 5000');
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
   _db.pragma('cache_size = -2000'); // 2MB cache instead of default ~2MB per page
@@ -182,43 +187,70 @@ function initSchema(db: Database.Database): void {
       created_at INTEGER,
       updated_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
-  // Migration: add depends_on column to agents if it doesn't exist
-  try {
-    db.exec(`ALTER TABLE agents ADD COLUMN depends_on TEXT`);
-  } catch {
-    // Column already exists — ignore
+  // Schema versioning
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      id INTEGER PRIMARY KEY,
+      version INTEGER NOT NULL
+    );
+  `);
+
+  const versionRow = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
+  const currentVersion = versionRow?.version ?? 0;
+
+  const setVersion = (v: number) => {
+    db.prepare('INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)').run(v);
+  };
+
+  if (currentVersion < 1) {
+    try { db.exec(`ALTER TABLE agents ADD COLUMN depends_on TEXT`); } catch {}
+    setVersion(1);
   }
 
-  // Migration: add schedule/cron columns to workflows
-  try {
-    db.exec(`ALTER TABLE workflows ADD COLUMN schedule TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
-  try {
-    db.exec(`ALTER TABLE workflows ADD COLUMN cron_enabled INTEGER DEFAULT 0`);
-  } catch {
-    // Column already exists — ignore
-  }
-  try {
-    db.exec(`ALTER TABLE workflows ADD COLUMN layout_json TEXT`);
-  } catch {
-    // Column already exists — ignore
+  if (currentVersion < 2) {
+    try { db.exec(`ALTER TABLE workflows ADD COLUMN schedule TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE workflows ADD COLUMN cron_enabled INTEGER DEFAULT 0`); } catch {}
+    try { db.exec(`ALTER TABLE workflows ADD COLUMN layout_json TEXT`); } catch {}
+    setVersion(2);
   }
 
-  // Migration: add step_outputs and agents_detail to workflow_runs
-  try {
-    db.exec(`ALTER TABLE workflow_runs ADD COLUMN step_outputs_json TEXT`);
-  } catch {}
-  try {
-    db.exec(`ALTER TABLE workflow_runs ADD COLUMN agents_detail_json TEXT`);
-  } catch {}
+  if (currentVersion < 3) {
+    try { db.exec(`ALTER TABLE workflow_runs ADD COLUMN step_outputs_json TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE workflow_runs ADD COLUMN agents_detail_json TEXT`); } catch {}
+    setVersion(3);
+  }
+
+  if (currentVersion < 4) {
+    // settings table was added in CREATE TABLE IF NOT EXISTS above — no ALTER needed
+    setVersion(4);
+  }
+}
+
+// Settings helpers
+export function getSetting(key: string): string | null {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, value, Date.now());
 }
 
 // Agent queries
-export function getAllAgents(): Agent[] {
+export function getAllAgents(limit = 200): Agent[] {
   const db = getDb();
   return db.prepare(`
     SELECT a.*, l.content AS last_log
@@ -247,7 +279,8 @@ export function getAllAgents(): Agent[] {
         )
     ) l ON l.agent_id = a.id
     ORDER BY a.created_at DESC
-  `).all() as Agent[];
+    LIMIT ?
+  `).all(limit) as Agent[];
 }
 
 export function getAgentById(id: string): Agent | undefined {
@@ -379,6 +412,30 @@ export function hasPtyChunks(agentId: string): boolean {
 export function clearPtyChunks(agentId: string): void {
   const db = getDb();
   db.prepare('DELETE FROM pty_chunks WHERE agent_id = ?').run(agentId);
+}
+
+// Delete agents (and their related data) older than 30 days if they are done/error/killed
+export function cleanupOldAgents(): void {
+  const db = getDb();
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  db.prepare(`
+    DELETE FROM logs WHERE agent_id IN (
+      SELECT id FROM agents WHERE status IN ('done', 'error', 'killed') AND created_at < ?
+    )
+  `).run(cutoff);
+  db.prepare(`
+    DELETE FROM pty_chunks WHERE agent_id IN (
+      SELECT id FROM agents WHERE status IN ('done', 'error', 'killed') AND created_at < ?
+    )
+  `).run(cutoff);
+  db.prepare(`
+    DELETE FROM token_usage WHERE agent_id IN (
+      SELECT id FROM agents WHERE status IN ('done', 'error', 'killed') AND created_at < ?
+    )
+  `).run(cutoff);
+  db.prepare(`
+    DELETE FROM agents WHERE status IN ('done', 'error', 'killed') AND created_at < ?
+  `).run(cutoff);
 }
 
 // Clean up PTY chunks for agents that finished more than 10 minutes ago
