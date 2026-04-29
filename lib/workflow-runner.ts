@@ -5,10 +5,11 @@ import fs from 'fs';
 import { createAgent, updateAgent, insertLog, getAgentById, getLogsForAgent, getAgentSummary, createWorkflowRun, updateWorkflowRun, updateWorkflowRunAgents, updateWorkflowRunDetail, getWorkflowRunById, getRecentWorkflowRuns } from './db';
 import { spawnAgent } from './spawner';
 import { loadAgentConfigs } from '@/lib/agent-configs';
+import { getConfig } from '@/lib/config';
 import type { AgentType } from '@/types';
 
 // Default sandbox repo for workflow agents — keeps test runs out of the main codebase
-const DEFAULT_WORKFLOW_REPO = process.env.WORKFLOW_SANDBOX_REPO || path.join(os.homedir(), 'boardroom-sandbox');
+const DEFAULT_WORKFLOW_REPO = getConfig().sandboxRepo;
 
 export interface WorkflowStep {
   name: string;

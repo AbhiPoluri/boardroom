@@ -1,7 +1,5 @@
 import { getSetting } from '@/lib/db';
-
-const DEFAULT_RATE_LIMIT = 10;  // requests per minute
-const DEFAULT_MAX_AGENTS = 20;  // concurrent agents
+import { getConfig } from '@/lib/config';
 
 export interface RateLimitConfig {
   rateLimit: number;
@@ -10,11 +8,10 @@ export interface RateLimitConfig {
 
 /**
  * Returns the current rate limit config.
- * DB values take priority over env vars; env vars take priority over hardcoded defaults.
+ * DB values take priority over config file/env vars/defaults.
  */
 export function getRateLimitConfig(): RateLimitConfig {
-  const envRateLimit = parseInt(process.env.BOARDROOM_RATE_LIMIT || '0', 10);
-  const envMaxAgents = parseInt(process.env.BOARDROOM_MAX_AGENTS || '0', 10);
+  const cfg = getConfig();
 
   const dbRateLimit = getSetting('rateLimit');
   const dbMaxAgents = getSetting('maxAgents');
@@ -22,19 +19,15 @@ export function getRateLimitConfig(): RateLimitConfig {
   const rateLimit =
     dbRateLimit !== null
       ? parseInt(dbRateLimit, 10)
-      : envRateLimit > 0
-      ? envRateLimit
-      : DEFAULT_RATE_LIMIT;
+      : cfg.rateLimit;
 
   const maxAgents =
     dbMaxAgents !== null
       ? parseInt(dbMaxAgents, 10)
-      : envMaxAgents > 0
-      ? envMaxAgents
-      : DEFAULT_MAX_AGENTS;
+      : cfg.maxAgents;
 
   return {
-    rateLimit: isNaN(rateLimit) || rateLimit < 1 ? DEFAULT_RATE_LIMIT : rateLimit,
-    maxAgents: isNaN(maxAgents) || maxAgents < 1 ? DEFAULT_MAX_AGENTS : maxAgents,
+    rateLimit: isNaN(rateLimit) || rateLimit < 1 ? 10 : rateLimit,
+    maxAgents: isNaN(maxAgents) || maxAgents < 1 ? 20 : maxAgents,
   };
 }

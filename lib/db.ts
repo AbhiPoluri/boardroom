@@ -1,14 +1,22 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
 import type { Agent, Log, Task, AgentStatus, LogStream, TaskStatus } from '@/types';
+import { getConfig } from '@/lib/config';
 
-const DB_PATH = process.env.DB_PATH || path.join(os.homedir(), 'boardroom', '.boardroom.db');
+const DB_PATH = getConfig().dbPath;
 
 let _db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (_db) return _db;
+
+  // Ensure the directory exists before creating the DB file
+  const dbDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
 
   try {
     _db = new Database(DB_PATH);

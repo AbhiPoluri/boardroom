@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import {
   CheckCircle2, Circle, Copy, Check, Terminal,
   GitBranch, Package, Settings, Play, AlertTriangle,
-  ChevronRight, Wrench, ExternalLink,
+  ChevronRight, Wrench, ExternalLink, Save, RotateCcw, Eye, EyeOff,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -209,6 +209,253 @@ function CliCard({
 
 const ENABLED_CLIS_KEY = 'boardroom:enabled-clis';
 
+interface ConfigState {
+  apiKey: string;
+  apiKeySet: boolean;
+  rateLimit: string;
+  maxAgents: string;
+  dbPath: string;
+  sandboxRepo: string;
+  port: string;
+}
+
+function ConfigurationCard() {
+  const [cfg, setCfg] = useState<ConfigState>({
+    apiKey: '',
+    apiKeySet: false,
+    rateLimit: '10',
+    maxAgents: '20',
+    dbPath: '',
+    sandboxRepo: '',
+    port: '7391',
+  });
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [loaded, setLoaded] = useState(false);
+
+  // Load current config on mount
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then((data: { apiKeySet?: boolean; rateLimit?: number; maxAgents?: number; dbPath?: string; sandboxRepo?: string; port?: number }) => {
+        setCfg({
+          apiKey: '',
+          apiKeySet: !!data.apiKeySet,
+          rateLimit: String(data.rateLimit ?? 10),
+          maxAgents: String(data.maxAgents ?? 20),
+          dbPath: data.dbPath ?? '',
+          sandboxRepo: data.sandboxRepo ?? '',
+          port: String(data.port ?? 7391),
+        });
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveStatus('idle');
+    try {
+      const body: Record<string, unknown> = {
+        rateLimit: parseInt(cfg.rateLimit, 10),
+        maxAgents: parseInt(cfg.maxAgents, 10),
+        dbPath: cfg.dbPath,
+        sandboxRepo: cfg.sandboxRepo,
+        port: parseInt(cfg.port, 10),
+      };
+      // Only send apiKey if the user typed something in the field
+      if (cfg.apiKey.trim().length > 0) {
+        body.apiKey = cfg.apiKey.trim();
+      }
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json() as { apiKeySet?: boolean };
+        setCfg(prev => ({ ...prev, apiKey: '', apiKeySet: !!data.apiKeySet }));
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2500);
+      } else {
+        setSaveStatus('error');
+      }
+    } catch {
+      setSaveStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }, [cfg]);
+
+  const handleReset = useCallback(async () => {
+    setSaving(true);
+    setSaveStatus('idle');
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: true }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { apiKeySet?: boolean; rateLimit?: number; maxAgents?: number; dbPath?: string; sandboxRepo?: string; port?: number };
+        setCfg({
+          apiKey: '',
+          apiKeySet: !!data.apiKeySet,
+          rateLimit: String(data.rateLimit ?? 10),
+          maxAgents: String(data.maxAgents ?? 20),
+          dbPath: data.dbPath ?? '',
+          sandboxRepo: data.sandboxRepo ?? '',
+          port: String(data.port ?? 7391),
+        });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2500);
+      } else {
+        setSaveStatus('error');
+      }
+    } catch {
+      setSaveStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  const field = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    opts?: { type?: string; placeholder?: string; hint?: string; restartNote?: boolean }
+  ) => (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-[11px] font-mono text-zinc-400">{label}</label>
+        {opts?.restartNote && (
+          <span className="text-[10px] font-mono text-amber-400/70">restart required</span>
+        )}
+      </div>
+      <input
+        type={opts?.type || 'text'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={opts?.placeholder}
+        className="w-full rounded-md bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 text-[12px] font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+      />
+      {opts?.hint && <p className="text-[10px] font-mono text-zinc-600">{opts.hint}</p>}
+    </div>
+  );
+
+  if (!loaded) {
+    return (
+      <SectionCard icon={Settings} title="configuration" badge="config file">
+        <p className="text-[12px] font-mono text-zinc-500">Loading...</p>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard icon={Settings} title="configuration" badge="~/.boardroom/config.json">
+      <p className="text-[12px] font-mono text-zinc-400">
+        Settings are saved to <code className="text-zinc-300">~/.boardroom/config.json</code> and override environment variables. Env vars still work for Docker deployments.
+      </p>
+
+      {/* API Key */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-[11px] font-mono text-zinc-400">API Key</label>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={`text-[9px] font-mono ${
+                cfg.apiKeySet
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                  : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+              }`}
+            >
+              {cfg.apiKeySet ? 'set' : 'not set'}
+            </Badge>
+          </div>
+        </div>
+        <div className="relative">
+          <input
+            type={showKey ? 'text' : 'password'}
+            value={cfg.apiKey}
+            onChange={e => setCfg(prev => ({ ...prev, apiKey: e.target.value }))}
+            placeholder={cfg.apiKeySet ? '(leave blank to keep existing key)' : 'Enter API key to enable auth...'}
+            className="w-full rounded-md bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 pr-8 text-[12px] font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey(p => !p)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        <p className="text-[10px] font-mono text-zinc-600">Leave empty to disable auth (dev mode).</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {field('Rate Limit (req/min)', cfg.rateLimit, v => setCfg(p => ({ ...p, rateLimit: v })), {
+          type: 'number',
+          placeholder: '10',
+          hint: 'Max API requests per minute. DB settings override this.',
+        })}
+        {field('Max Agents', cfg.maxAgents, v => setCfg(p => ({ ...p, maxAgents: v })), {
+          type: 'number',
+          placeholder: '20',
+          hint: 'Max concurrent agents allowed. DB settings override this.',
+        })}
+      </div>
+
+      {field('Database Path', cfg.dbPath, v => setCfg(p => ({ ...p, dbPath: v })), {
+        placeholder: '~/.boardroom/data.db',
+        hint: 'Path to the SQLite database file.',
+        restartNote: true,
+      })}
+
+      {field('Sandbox Repo', cfg.sandboxRepo, v => setCfg(p => ({ ...p, sandboxRepo: v })), {
+        placeholder: '~/boardroom-sandbox',
+        hint: 'Default working directory for workflow agents.',
+      })}
+
+      {field('Port', cfg.port, v => setCfg(p => ({ ...p, port: v })), {
+        type: 'number',
+        placeholder: '7391',
+        restartNote: true,
+      })}
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] font-mono text-zinc-300 transition-colors disabled:opacity-50"
+        >
+          <Save className="w-3 h-3" />
+          {saving ? 'saving...' : 'save config'}
+        </button>
+        <button
+          onClick={handleReset}
+          disabled={saving}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-500 transition-colors disabled:opacity-50"
+        >
+          <RotateCcw className="w-3 h-3" />
+          reset to defaults
+        </button>
+        {saveStatus === 'saved' && (
+          <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
+            <Check className="w-3 h-3" /> saved
+          </span>
+        )}
+        {saveStatus === 'error' && (
+          <span className="text-[11px] font-mono text-red-400 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" /> failed to save
+          </span>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
 export default function SetupPage() {
   const [check, setCheck] = useState<CheckResult>({
     node: null,
@@ -356,6 +603,9 @@ export default function SetupPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5">
         <div className="max-w-3xl mx-auto space-y-4">
+
+          {/* Configuration */}
+          <ConfigurationCard />
 
           {/* System Requirements */}
           <SectionCard icon={Settings} title="system requirements">
