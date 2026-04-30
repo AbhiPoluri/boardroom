@@ -95,6 +95,28 @@ The Docker setup mounts `~/.config/claude` so agents use your existing Claude Co
 
 ---
 
+## MCP Server
+
+Control Boardroom from Claude Code, Cursor, Windsurf, or any MCP-compatible client.
+
+```bash
+cd mcp
+npm install && npm run build
+claude mcp add boardroom -- node $(pwd)/dist/index.js
+```
+
+Now you can spawn and manage agents directly from your editor:
+
+> *"spawn three claude agents to refactor lib/db.ts in parallel"*
+>
+> *"list running agents and their cost"*
+>
+> *"tell the orchestrator to ship the checkout feature"*
+
+The MCP server exposes 9 tools wrapping the REST API: `boardroom_spawn_agent`, `boardroom_tell_orchestrator`, `boardroom_list_agents`, `boardroom_get_token_usage`, and more. Full setup docs and Cursor / Claude Desktop config in [`mcp/README.md`](mcp/README.md).
+
+---
+
 ## Architecture
 
 Boardroom is a self-hosted Next.js app that manages agent processes directly on your machine.

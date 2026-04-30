@@ -1,0 +1,39 @@
+{
+  "name": "boardroom-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Boardroom — control your AI agent fleet from Claude Code, Cursor, or any MCP client.",
+  "type": "module",
+  "bin": {
+    "boardroom-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "boardroom",
+    "ai-agents",
+    "claude-code",
+    "anthropic"
+  ],
+  "author": "Abhiram Poluri",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
