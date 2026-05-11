@@ -1,6 +1,7 @@
 import * as pty from 'node-pty';
 import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage, insertPtyChunk, clearPtyChunks, getPushRequests, getPushRequest, updatePushRequest, createNotification, getActiveProject, getPersonas, getPersonaById, getPersonaBySlug, createBoardTask, getBoardTasks, createPlan } from '@/lib/db';
 import { wakePersona } from '@/lib/personas';
+import { startPlan } from '@/lib/plans';
 import { spawnAgent, resumeAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
@@ -493,11 +494,23 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
           step_order: step++,
         });
       }
+      // Auto-start the plan: subtasks move staged → open per execution_mode
+      // (first one for sequential; all dep-free ones for parallel). Without
+      // this, the plan sits in `draft` forever and the user wonders why
+      // nothing is happening.
+      let opened = 0;
+      try {
+        const res = startPlan(planId);
+        opened = res.opened;
+      } catch (err) {
+        return { error: `Plan created but failed to start: ${err instanceof Error ? err.message : String(err)}` };
+      }
       return {
         plan_id: planId.slice(0, 8),
         subtasks: resolved.length,
+        opened,
         execution_mode: inp.execution_mode ?? 'parallel',
-        message: `Plan staged with ${resolved.length} subtask(s). Start it from /planning or PATCH /api/plans/${planId} {action:"start"}.`,
+        message: `Plan started: ${opened} of ${resolved.length} subtask(s) opened on the board. The rest are staged until their predecessors finish.`,
       };
     }
     // ── Direct shortcut: wake a specific persona with a task right now.
