@@ -11,7 +11,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { useProjects } from '@/lib/use-projects';
 import {
   FileText, Workflow, Home, Sparkles, SquareCode, Plus, Search, Wrench,
-  LayoutDashboard, Bell, Users, ListTodo, GitPullRequest, BookOpen,
+  LayoutDashboard, Bell, Users, ListTodo, GitPullRequest, BookOpen, HelpCircle,
 } from 'lucide-react';
 
 function RingMark({ size = 14 }: { size?: number }) {
@@ -234,6 +234,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </div>
           <div className="brr-nav-right">
+            <Link
+              href="/tutorial"
+              className="brr-nav-item"
+              title="open tutorial"
+              aria-label="tutorial"
+            >
+              <HelpCircle className="w-3 h-3" strokeWidth={1.75} />
+            </Link>
             <Link
               href={prCount > 0 && latestPendingPrId ? `/review?id=${latestPendingPrId}` : '/review'}
               className="brr-nav-item"

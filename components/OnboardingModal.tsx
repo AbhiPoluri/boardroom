@@ -5,7 +5,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Download, Check } from 'lucide-react';
+import Link from 'next/link';
+import { Sparkles, Download, Check, BookOpen } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
 interface PackPreview {
@@ -138,13 +139,23 @@ export function OnboardingModal() {
           })}
         </div>
 
-        <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-800">
+        <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-800 gap-3 flex-wrap">
           <p className="text-[10px] font-mono text-zinc-500">
             One pack pins as your default for any new projects you create.
           </p>
-          <Button variant="ghost" size="sm" onClick={handleSkip}>
-            skip for now
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/tutorial"
+              onClick={handleSkip}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-md border border-zinc-700 text-[11px] font-mono text-zinc-200 hover:bg-zinc-800/60"
+            >
+              <BookOpen className="w-3 h-3" />
+              take the tutorial
+            </Link>
+            <Button variant="ghost" size="sm" onClick={handleSkip}>
+              skip for now
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
