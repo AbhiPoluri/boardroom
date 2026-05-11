@@ -15,42 +15,50 @@ Spawn, orchestrate, and manage AI agents from a single platform. Claude Code, Co
 
 ## Screenshots
 
-### Fleet View
-![Fleet](docs/screenshots/fleet.jpg)
-*Monitor every agent's status, cost, and output in real-time. Orchestrator chat sidebar on the left.*
+### OS Home
+![Home](docs/screenshots/home.jpg)
+*The agentic OS. Persona team on the left, four-column task board in the middle (Open · In Progress · Blocked · Done), floating orchestrator composer at the bottom.*
 
-### Workspace
-![Workspace](docs/screenshots/workspace.jpg)
-*Full IDE workspace with file browser, code editor, and agents panel.*
+### Personas
+![Personas](docs/screenshots/personas.jpg)
+*Named workers — each with skills, system prompt, autonomy, and a runtime. The colored pill next to every name shows which CLI fires when they wake (claude, hermes, codex, opencode).*
 
-### Dashboard
-![Dashboard](docs/screenshots/dashboard.jpg)
-*Dashboard with fleet overview, cost breakdown, activity feed, and performance metrics.*
+### Plans
+![Planning](docs/screenshots/planning.jpg)
+*Multi-step plans chain N subtasks across N personas. Sequential plans with auto-merge accumulate file edits into one final result.*
 
-### Pipelines
-![Pipelines](docs/screenshots/pipelines.jpg)
-*Visual DAG pipeline builder with saved workflows, templates, and run history.*
+### Push request queue
+![Review](docs/screenshots/review.jpg)
+*Every finished task opens a push request. Batch-approve, revert, or let the conflict resolver auto-merge. Resolver state surfaces inline.*
 
-### Marketplace
-![Marketplace](docs/screenshots/marketplace.jpg)
-*Browse 100+ skills, MCP servers, and agent personas. Search, preview, install.*
+### Custom pages
+![Custom pages](docs/screenshots/custom-pages.jpg)
+*Agents author pages at `/custom/[slug]`. Two kinds — markdown or analytics with stat cards and tables. Shown: a live LinkedIn analytics snapshot rendered into the analytics kind.*
+
+### Guided tour
+![Tour](docs/screenshots/tour.jpg)
+*The interactive tour walks first-time users through every real page, spotlighting each UI surface with a pulsing highlight and explaining what it does. Keyboard ← → / Esc, or click through with the controls.*
+
+### Tutorial reference
+![Tutorial](docs/screenshots/tutorial.jpg)
+*Long-form animated reference at `/tutorial` — covers personas, runtimes, plans, the dispatcher, `/review`, custom pages, workflows, and tips. Interactive widgets (runtime selector, animated mini-board, plan flow, PR state machine) instead of a wall of text.*
 
 ---
 
 ## Key Features
 
-- **Multi-Agent Spawning** — Launch Claude Code, Codex, OpenCode, and custom shell agents in parallel across multiple repos
-- **Orchestrator Chat** — Describe what you need in plain language; the orchestrator breaks it down and delegates
-- **Visual DAG Pipelines** — Drag-and-drop workflow builder with output passing, evaluator loops, and router nodes
-- **Git Worktree Isolation** — Every agent gets its own branch via git worktrees — no conflicts, clean separation
-- **Auto-Commit & Auto-PR** — Agents commit their work and open pull requests automatically when done
-- **Merge Conflict Resolution** — Boardroom detects conflicts and auto-spawns resolver agents to fix them
-- **IDE Workspace** — In-browser file browser, multi-tab editor, syntax highlighting, diff viewer, and PR review
-- **Fleet Monitoring** — Real-time agent status, live logs, cost tracking, and token usage per agent
-- **Marketplace** — 100+ skills, MCP server configs, and reusable agent personas
-- **Cron Scheduling** — Schedule recurring agent tasks on any cron expression
-- **Agent Communication** — Built-in message bus so agents can coordinate and pass results to each other
-- **Cost Analytics** — Per-agent token tracking and cost breakdown with optimization suggestions
+- **Personas + Multi-Runtime** — Named workers with skills, system prompts, and a runtime selector (claude / hermes / codex / opencode). Color-coded badges tell you which CLI fires when they wake.
+- **Persistent Claude Sessions** — Each persona's first claude task mints a session UUID; subsequent tasks `--resume` it so the model remembers what it touched, even across fresh worktrees.
+- **Plans + Auto-Merge** — Sequential or parallel plans across N personas. With `auto_merge`, each subtask's PR merges before the next agent spawns, so chained file-edits accumulate.
+- **Auto-Pickup Dispatcher** — Personas set to autonomy=auto get matched against open tasks by skill every 4s — no manual assignment needed.
+- **Conflict Resolver** — When a merge hits a conflict, a resolver agent spawns and works it out. State (running / done / failed / done_unverified) surfaces in `/review`.
+- **Git Worktree Isolation** — Every plan subtask gets its own worktree → branch → PR. Parallel agents never trip over each other.
+- **Custom Pages (Slice 3)** — Agents author runtime pages at `/custom/[slug]`. Markdown or analytics kinds today — stat grids, tables, callouts, no JSX eval.
+- **Interactive Guided Tour** — A spotlight overlay walks first-run users through the real `/`, `/personas`, `/planning`, `/review`, `/custom`, `/workflows` pages with explanations.
+- **/review Queue** — Batch approve, batch reject, revert merged PRs, retry conflict resolvers, VS Code/Cursor deep-link to changed files.
+- **Themes** — Five built-in themes (claude / dark / light / midnight / emerald) plus user-defined custom themes. Pre-hydration script kills first-paint FOUC.
+- **Cron Workflows** — Wrap a plan in a cron schedule. Each tick spawns a fresh plan run.
+- **MCP Server** — Boardroom exposes itself as an MCP server so Claude Code / Cursor / any MCP client can spawn agents, list status, and run plans from the editor.
 
 ---
 
@@ -130,21 +138,32 @@ Boardroom is a self-hosted Next.js app that manages agent processes directly on 
 ```
 boardroom/
 ├── app/
+│   ├── os/               # OS home — task board + persona team + composer
+│   ├── personas/         # Persona editor (skills, prompt, model, runtime)
+│   ├── planning/         # Plan builder + plan canvas
+│   ├── review/           # Push-request queue with batch ops + resolver state
+│   ├── custom/           # Slice 3 — agent-authored markdown / analytics pages
+│   ├── workflows/        # Visual DAG pipelines + cron workflows
+│   ├── tutorial/         # Long-form tutorial reference + Start Tour CTA
 │   ├── workspace/        # IDE: file browser, editor, diff, PR review
-│   ├── workflows/        # Visual DAG pipeline builder + runner
-│   ├── orchestrator/     # Chat UI for orchestration
-│   ├── costs/            # Token usage + cost analytics
-│   ├── cron/             # Scheduled agent jobs
-│   ├── skills/           # Skills and personas manager
-│   └── api/              # 20+ REST API endpoints
-├── components/           # Shared React components
+│   └── api/              # 30+ REST API endpoints
+├── components/
+│   ├── TourOverlay.tsx   # Spotlight + tour card overlay
+│   ├── RuntimeBadge.tsx  # Color-coded claude/hermes/codex/opencode chip
+│   ├── AnalyticsRenderer.tsx  # JSON → stat cards + tables for custom pages
+│   ├── OSHome.tsx        # OS home composition
+│   └── …
 ├── lib/
-│   ├── orchestrator.ts   # Claude CLI orchestration logic
-│   ├── spawner.ts        # Agent process lifecycle
-│   ├── workflow-runner.ts # DAG execution engine
-│   ├── db.ts             # SQLite access layer
-│   └── worktree.ts       # Git worktree operations
-└── middleware.ts          # API key authentication
+│   ├── tour-context.tsx  # Guided tour step config + provider
+│   ├── personas.ts       # wakePersona, bounded prompt context, recap helpers
+│   ├── plans.ts          # Plan engine: sequential/parallel + auto-merge
+│   ├── spawner.ts        # claude (stream-json) + PTY (codex/opencode/hermes)
+│   ├── dispatcher.ts     # 4s auto-pickup loop
+│   ├── conflict-resolver.ts # Spawn + monitor merge-conflict resolver agents
+│   ├── custom-pages.ts   # CRUD for /custom/[slug] pages
+│   ├── worktree.ts       # Git worktree operations + retry-able merge guard
+│   └── db.ts             # SQLite access layer (schema v23)
+└── instrumentation.ts    # Server boot: ghost reap, prune, dispatcher start
 ```
 
 ---
