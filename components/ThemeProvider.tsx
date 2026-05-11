@@ -114,6 +114,14 @@ function clearCustomThemeVars() {
   }
 }
 
+// Tailwind `dark:` utilities are gated by the `dark` class on <html>.
+// Without this, switching to `light` keeps every `dark:*` rule active.
+function applyDarkClass(theme: Theme) {
+  const el = document.documentElement;
+  if (theme === 'light') el.classList.remove('dark');
+  else el.classList.add('dark');
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME);
   const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
@@ -140,6 +148,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const active = allIds.includes(saved) ? saved : DEFAULT_THEME;
 
     setThemeState(active);
+    applyDarkClass(active);
 
     if (BUILTIN_THEMES.includes(active as BuiltinTheme)) {
       clearCustomThemeVars();
@@ -156,6 +165,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
     localStorage.setItem(STORAGE_KEY, newTheme);
+    applyDarkClass(newTheme);
 
     if (BUILTIN_THEMES.includes(newTheme as BuiltinTheme)) {
       clearCustomThemeVars();

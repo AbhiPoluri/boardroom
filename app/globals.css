@@ -121,6 +121,7 @@
 /* ─── Theme CSS variables ───────────────────────────────────────────────── */
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --br-bg-primary: #0a0a0a;
   --br-bg-secondary: #18181b;
   --br-bg-card: #1c1c1f;
@@ -134,9 +135,34 @@
   --br-danger: #ef4444;
   --br-warning: #eab308;
   --br-info: #3b82f6;
+
+  /* Forward semantic tokens (new OS-UI code reads these) */
+  --bg: #0a0a0a;
+  --bg-raised: #18181b;
+  --bg-card: #1c1c1f;
+  --bg-inset: #050505;
+  --bg-hover: #27272a;
+  --bg-overlay: rgba(10,10,10,0.78);
+  --fg: #fafafa;
+  --fg-secondary: #a1a1aa;
+  --fg-muted: #71717a;
+  --fg-faint: #3f3f46;
+  --border: #27272a;
+  --border-faint: #1c1c1f;
+  --border-strong: #3f3f46;
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-soft: rgba(16,185,129,0.12);
+  --accent-line: rgba(16,185,129,0.32);
+  --accent-fg: #0a0a0a;
+  --state-ok: #10b981;
+  --state-warn: #eab308;
+  --state-error: #ef4444;
+  --state-info: #3b82f6;
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --br-bg-primary: #ffffff;
   --br-bg-secondary: #f4f4f5;
   --br-bg-card: #ffffff;
@@ -150,9 +176,34 @@
   --br-danger: #dc2626;
   --br-warning: #ca8a04;
   --br-info: #2563eb;
+
+  /* Forward semantic tokens (new OS-UI code reads these) */
+  --bg: #ffffff;
+  --bg-raised: #fafafa;
+  --bg-card: #ffffff;
+  --bg-inset: #f4f4f5;
+  --bg-hover: #e4e4e7;
+  --bg-overlay: rgba(255,255,255,0.82);
+  --fg: #18181b;
+  --fg-secondary: #3f3f46;
+  --fg-muted: #71717a;
+  --fg-faint: #a1a1aa;
+  --border: #e4e4e7;
+  --border-faint: #f4f4f5;
+  --border-strong: #d4d4d8;
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-soft: rgba(5,150,105,0.10);
+  --accent-line: rgba(5,150,105,0.30);
+  --accent-fg: #ffffff;
+  --state-ok: #16a34a;
+  --state-warn: #ca8a04;
+  --state-error: #dc2626;
+  --state-info: #2563eb;
 }
 
 [data-theme="midnight"] {
+  color-scheme: dark;
   --br-bg-primary: #0b0e17;
   --br-bg-secondary: #111827;
   --br-bg-card: #1a1f36;
@@ -166,9 +217,34 @@
   --br-danger: #f87171;
   --br-warning: #fbbf24;
   --br-info: #60a5fa;
+
+  /* Forward semantic tokens */
+  --bg: #0b0e17;
+  --bg-raised: #111827;
+  --bg-card: #1a1f36;
+  --bg-inset: #060810;
+  --bg-hover: #1e2642;
+  --bg-overlay: rgba(11,14,23,0.80);
+  --fg: #e2e8f0;
+  --fg-secondary: #94a3b8;
+  --fg-muted: #64748b;
+  --fg-faint: #475569;
+  --border: #1e2642;
+  --border-faint: #111827;
+  --border-strong: #334155;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-soft: rgba(99,102,241,0.14);
+  --accent-line: rgba(99,102,241,0.36);
+  --accent-fg: #0b0e17;
+  --state-ok: #34d399;
+  --state-warn: #fbbf24;
+  --state-error: #f87171;
+  --state-info: #60a5fa;
 }
 
 [data-theme="emerald"] {
+  color-scheme: dark;
   --br-bg-primary: #021a0f;
   --br-bg-secondary: #052e1c;
   --br-bg-card: #0a3d25;
@@ -182,6 +258,30 @@
   --br-danger: #fca5a5;
   --br-warning: #fde68a;
   --br-info: #93c5fd;
+
+  /* Forward semantic tokens */
+  --bg: #021a0f;
+  --bg-raised: #052e1c;
+  --bg-card: #0a3d25;
+  --bg-inset: #010d07;
+  --bg-hover: #0d4a2e;
+  --bg-overlay: rgba(2,26,15,0.78);
+  --fg: #ecfdf5;
+  --fg-secondary: #a7f3d0;
+  --fg-muted: #6ee7b7;
+  --fg-faint: #34d399;
+  --border: #0d4a2e;
+  --border-faint: #052e1c;
+  --border-strong: #166534;
+  --accent: #34d399;
+  --accent-hover: #10b981;
+  --accent-soft: rgba(52,211,153,0.14);
+  --accent-line: rgba(52,211,153,0.36);
+  --accent-fg: #021a0f;
+  --state-ok: #34d399;
+  --state-warn: #fde68a;
+  --state-error: #fca5a5;
+  --state-info: #93c5fd;
 }
 
 /* ── CLAUDE — warm editorial cockpit (Boardroom redesign) ─────────────────
