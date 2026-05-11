@@ -1,38 +1,76 @@
 import { NextRequest } from 'next/server';
-import { createPushRequest, getPushRequests, getPushRequest, updatePushRequest, getPendingPushRequestsCount, getAgentById, createNotification, createAgent } from '@/lib/db';
-import { getWorktreeGitInfo, getWorktreeDiff, mergeWorktreeBranch } from '@/lib/worktree';
-import { spawnAgent } from '@/lib/spawner';
+import { createPushRequest, getPushRequests, getPushRequest, updatePushRequest, getPendingPushRequestsCount, getAgentById, createNotification, getActiveProject } from '@/lib/db';
+import { getWorktreeGitInfo, getWorktreeDiff, mergeWorktreeBranch, revertMergedBranch, isBranchMergedInto } from '@/lib/worktree';
+import { spawnConflictResolver } from '@/lib/conflict-resolver';
 import { v4 as uuidv4 } from 'uuid';
 
 export const dynamic = 'force-dynamic';
+
+// Project scoping: by default we filter to the active project's PRs so the
+// bell + /review reflect the project the user is currently in. Pass
+// `?project=all` to get the cross-project view.
+function resolveProjectScope(searchParams: URLSearchParams): string | undefined {
+  const param = searchParams.get('project');
+  if (param === 'all') return undefined;
+  if (param && param !== 'active') return param;
+  return getActiveProject()?.id;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status') || undefined;
   const id = searchParams.get('id');
   const countOnly = searchParams.get('count') === '1';
+  const projectId = resolveProjectScope(searchParams);
 
   if (countOnly) {
-    return Response.json({ count: getPendingPushRequestsCount() });
+    return Response.json({ count: getPendingPushRequestsCount(projectId) });
   }
 
   if (id) {
     const pr = getPushRequest(id);
     if (!pr) return Response.json({ error: 'Not found' }, { status: 404 });
 
-    // Include diff if requested
+    // Include diff + worktree info if requested. The /review page uses
+    // worktree_path to build editor deep-links for individual file pills.
     const includeDiff = searchParams.get('diff') === '1';
     let diff: string | null = null;
-    if (includeDiff) {
-      const agent = getAgentById(pr.agent_id);
-      if (agent?.worktree_path) {
+    let worktreePath: string | null = null;
+    let repoPath: string | null = null;
+    const agent = getAgentById(pr.agent_id);
+    if (agent) {
+      worktreePath = agent.worktree_path ?? null;
+      repoPath = agent.repo ?? null;
+      if (includeDiff && agent.worktree_path) {
         diff = getWorktreeDiff(agent.worktree_path, pr.base_branch);
       }
     }
-    return Response.json({ ...pr, diff });
+    // Surface conflict-resolver state when one was spawned for this PR.
+    // The resolver agent's `done` status alone isn't authoritative — claude
+    // can exit cleanly without actually committing the merge. We cross-check
+    // the parent-repo log for the canonical merge commit and downgrade
+    // `done → done_unverified` when the merge isn't actually there.
+    let resolverStatus: string | null = null;
+    let resolverMergeLanded = false;
+    if (pr.resolver_agent_id) {
+      const resolver = getAgentById(pr.resolver_agent_id);
+      resolverStatus = resolver?.status ?? null;
+      if (resolverStatus === 'done' && agent?.repo) {
+        resolverMergeLanded = isBranchMergedInto(agent.repo, pr.branch, pr.base_branch);
+        if (!resolverMergeLanded) resolverStatus = 'done_unverified';
+      }
+    }
+    return Response.json({
+      ...pr,
+      diff,
+      worktree_path: worktreePath,
+      repo: repoPath,
+      resolver_status: resolverStatus,
+      resolver_merge_landed: resolverMergeLanded,
+    });
   }
 
-  const requests = getPushRequests(status);
+  const requests = getPushRequests(status, 50, projectId);
   return Response.json({ requests });
 }
 
@@ -77,7 +115,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  let body: { id: string; action: 'approve' | 'reject'; comment?: string };
+  let body: { id: string; action: 'approve' | 'reject' | 'retry_resolver' | 'revert'; comment?: string };
   try {
     body = await req.json();
   } catch {
@@ -91,8 +129,51 @@ export async function PATCH(req: NextRequest) {
 
   const pr = getPushRequest(id);
   if (!pr) return Response.json({ error: 'Push request not found' }, { status: 404 });
-  if (pr.status !== 'pending') {
+  // retry_resolver and revert operate on already-approved PRs. Approve/reject
+  // are only valid on pending ones.
+  const postApprovalActions = new Set(['retry_resolver', 'revert']);
+  if (!postApprovalActions.has(action) && pr.status !== 'pending') {
     return Response.json({ error: `Already ${pr.status}` }, { status: 400 });
+  }
+
+  if (action === 'revert') {
+    if (pr.status !== 'approved') {
+      return Response.json({ error: 'revert only valid on approved PRs' }, { status: 400 });
+    }
+    const agent = getAgentById(pr.agent_id);
+    if (!agent?.repo) {
+      return Response.json({ error: 'cannot revert — owning agent or its repo is missing' }, { status: 400 });
+    }
+    const result = revertMergedBranch(agent.repo, pr.branch, pr.base_branch, agent.id);
+    if (!result.success) {
+      return Response.json({ error: result.message }, { status: 500 });
+    }
+    updatePushRequest(id, 'rejected', `reverted: ${comment || result.message}`);
+    createNotification('push_rejected', `Push reverted: ${pr.agent_name}`, result.message, pr.agent_id);
+    return Response.json({ id, status: 'reverted', message: result.message, revertCommit: result.revertCommit });
+  }
+
+  if (action === 'retry_resolver') {
+    if (pr.status !== 'approved') {
+      return Response.json({ error: 'retry only valid on approved PRs whose resolver failed' }, { status: 400 });
+    }
+    const agent = getAgentById(pr.agent_id);
+    if (!agent?.repo) {
+      return Response.json({ error: 'cannot retry — owning agent or its repo is missing' }, { status: 400 });
+    }
+    const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch, agent.id);
+    if (result.success) {
+      return Response.json({ id, status: 'merged', message: result.message });
+    }
+    if (result.needsAgent && result.conflictFiles) {
+      const { shortId } = await spawnConflictResolver({
+        pr: { id: pr.id, agent_id: pr.agent_id, branch: pr.branch, base_branch: pr.base_branch },
+        repo: agent.repo,
+        conflictFiles: result.conflictFiles,
+      });
+      return Response.json({ conflict: true, message: `Re-spawned resolver`, resolver: shortId });
+    }
+    return Response.json({ error: `Retry failed: ${result.message}` }, { status: 500 });
   }
 
   if (action === 'approve') {
@@ -102,16 +183,16 @@ export async function PATCH(req: NextRequest) {
     // Actually merge the branch
     const agent = getAgentById(pr.agent_id);
     if (agent?.repo) {
-      const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch);
+      const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch, agent.id);
       if (!result.success) {
         if (result.needsAgent && result.conflictFiles) {
-          // Auto-spawn resolver agent
-          const resolverId = uuidv4();
           const conflictList = result.conflictFiles.join(', ');
-          const resolveTask = `Resolve merge conflicts in ${agent.repo}. Branch ${pr.branch} conflicts with ${pr.base_branch} in: ${conflictList}. Steps: 1) git checkout ${pr.base_branch}, 2) git merge ${pr.branch} --no-ff, 3) Resolve all conflict markers by combining both versions, 4) git add resolved files, 5) git commit. Do NOT delete code — combine both.`;
-          createAgent({ id: resolverId, name: 'merge-resolver', type: 'claude', status: 'spawning', task: resolveTask, repo: agent.repo, worktree_path: null, pid: null, port: null, created_at: Date.now() });
-          spawnAgent({ agentId: resolverId, task: resolveTask, type: 'claude', name: 'merge-resolver', repo: agent.repo, model: 'sonnet', useGitIsolation: false }).catch(() => {});
-          return Response.json({ conflict: true, message: `Merge conflict in ${conflictList}. Spawned merge-resolver agent to resolve.`, resolver: resolverId.slice(0,8) });
+          const { shortId } = await spawnConflictResolver({
+            pr: { id: pr.id, agent_id: pr.agent_id, branch: pr.branch, base_branch: pr.base_branch },
+            repo: agent.repo,
+            conflictFiles: result.conflictFiles,
+          });
+          return Response.json({ conflict: true, message: `Merge conflict in ${conflictList}. Spawned merge-resolver agent to resolve.`, resolver: shortId });
         }
         return Response.json({ error: `Merge failed: ${result.message}` }, { status: 500 });
       }

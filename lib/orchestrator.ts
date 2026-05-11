@@ -264,20 +264,17 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         const agent = getAgentById(pr.agent_id);
         if (agent?.repo) {
           const { mergeWorktreeBranch } = await import('@/lib/worktree');
-          const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch);
+          const result = mergeWorktreeBranch(agent.repo, pr.branch, pr.base_branch, agent.id);
           if (!result.success) {
             if (result.needsAgent && result.conflictFiles) {
-              // Auto-spawn a resolver agent to handle merge conflicts
-              const resolverId = uuidv4();
-              const resolverName = `merge-resolver`;
+              const { spawnConflictResolver } = await import('@/lib/conflict-resolver');
               const conflictList = result.conflictFiles.join(', ');
-              const resolveTask = `Resolve merge conflicts in ${agent.repo}. The branch ${pr.branch} conflicts with ${pr.base_branch} in these files: ${conflictList}. Steps: 1) git checkout ${pr.base_branch}, 2) git merge ${pr.branch} --no-ff, 3) For each conflicted file, read it, resolve the conflict markers (<<<<<<< ======= >>>>>>>) by keeping BOTH sets of changes intelligently combined, 4) git add the resolved files, 5) git commit -m "merge: resolve conflicts for ${pr.branch} into ${pr.base_branch}". Do NOT delete any code — combine both versions.`;
-              createAgent({
-                id: resolverId, name: resolverName, type: 'claude', status: 'spawning',
-                task: resolveTask, repo: agent.repo, worktree_path: null, pid: null, port: null, created_at: Date.now(),
+              const { shortId } = await spawnConflictResolver({
+                pr: { id: pr.id, agent_id: pr.agent_id, branch: pr.branch, base_branch: pr.base_branch },
+                repo: agent.repo,
+                conflictFiles: result.conflictFiles,
               });
-              await spawnAgent({ agentId: resolverId, task: resolveTask, type: 'claude', name: resolverName, repo: agent.repo, model: 'sonnet', useGitIsolation: false });
-              return { id, status: 'conflict', message: `Merge conflict in ${conflictList}. Spawned merge-resolver agent (${resolverId.slice(0,8)}) to resolve automatically.`, resolver: resolverId.slice(0,8) };
+              return { id, status: 'conflict', message: `Merge conflict in ${conflictList}. Spawned merge-resolver agent (${shortId}) to resolve automatically.`, resolver: shortId };
             }
             return { error: `Merge failed: ${result.message}` };
           }
