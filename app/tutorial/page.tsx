@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence, useScroll, useTransform, useInView, useMotionValue, animate } from 'framer-motion';
 import {
-  Sparkles, Users, ListTodo, GitPullRequest, BookOpen, Workflow, Wrench,
+  Sparkles, Users, ListTodo, GitPullRequest, BookOpen, Workflow,
   Cpu, Activity, Lightbulb, Layers, ChevronRight, ArrowLeft, Rocket,
+  CheckCircle2, Circle, Clock, GitMerge, ArrowRight,
 } from 'lucide-react';
-import { RuntimeBadge, RUNTIME_STYLE } from '@/components/RuntimeBadge';
+import { RuntimeBadge, RUNTIME_STYLE, type PersonaRuntime } from '@/components/RuntimeBadge';
 
-const SECTIONS: Array<{ id: string; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }> }> = [
+const SECTIONS: Array<{ id: string; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }> = [
   { id: 'welcome',       label: 'Welcome',         icon: Rocket },
   { id: 'personas',      label: 'Personas',        icon: Users },
   { id: 'runtimes',      label: 'Runtimes',        icon: Cpu },
@@ -17,20 +19,494 @@ const SECTIONS: Array<{ id: string; label: string; icon: React.ComponentType<{ c
   { id: 'dispatcher',    label: 'Auto dispatcher', icon: Activity },
   { id: 'review',        label: 'Reviewing PRs',   icon: GitPullRequest },
   { id: 'custom-pages',  label: 'Custom pages',    icon: BookOpen },
-  { id: 'workflows',     label: 'Workflows + cron', icon: Workflow },
-  { id: 'tips',          label: 'Tips & gotchas',  icon: Lightbulb },
+  { id: 'workflows',     label: 'Workflows',       icon: Workflow },
+  { id: 'tips',          label: 'Tips',            icon: Lightbulb },
 ];
 
+// ─── Scroll progress bar ──────────────────────────────────────────────────
+function ScrollProgress({ container }: { container: React.RefObject<HTMLDivElement | null> }) {
+  const { scrollYProgress } = useScroll({ container });
+  const width = useTransform(scrollYProgress, [0, 1], ['0%', '100%']);
+  return (
+    <motion.div style={{
+      position: 'absolute', top: 0, left: 0, height: 2, width,
+      background: 'linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, transparent) 100%)',
+      zIndex: 5,
+    }} />
+  );
+}
+
+// ─── Section wrapper with fade-up on enter ────────────────────────────────
+function AnimatedSection({
+  id, title, icon: Icon, lead, children,
+}: {
+  id: string;
+  title: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  lead?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <motion.section
+      id={id}
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-80px 0px -120px 0px' }}
+      transition={{ duration: 0.55, ease: [0.2, 0.7, 0.3, 1] }}
+      style={{ scrollMarginTop: 24, marginBottom: 80 }}
+    >
+      <motion.h2
+        initial={{ opacity: 0, x: -10 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: true }}
+        transition={{ delay: 0.1, duration: 0.4 }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 26, fontWeight: 600, color: 'var(--fg)',
+          marginTop: 0, marginBottom: 14, paddingBottom: 12,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <Icon size={20} strokeWidth={1.5} />
+        {title}
+      </motion.h2>
+      {lead && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.15, duration: 0.4 }}
+          style={{ color: 'var(--fg)', fontSize: 16, lineHeight: 1.55, margin: '0 0 18px' }}
+        >
+          {lead}
+        </motion.p>
+      )}
+      {children}
+    </motion.section>
+  );
+}
+
+// ─── Live runtime selector widget ─────────────────────────────────────────
+function RuntimeSelector() {
+  const runtimes: PersonaRuntime[] = ['claude', 'hermes', 'codex', 'opencode'];
+  const [selected, setSelected] = useState<PersonaRuntime>('claude');
+  const detail = RUNTIME_STYLE[selected];
+  return (
+    <div style={{
+      padding: 20, border: '1px solid var(--border)', borderRadius: 12,
+      background: 'var(--bg-raised)', overflow: 'hidden', position: 'relative',
+    }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {runtimes.map(rt => (
+          <button
+            key={rt}
+            type="button"
+            onClick={() => setSelected(rt)}
+            style={{
+              cursor: 'pointer', border: 'none', padding: 0, background: 'transparent',
+              opacity: selected === rt ? 1 : 0.55,
+              transition: 'opacity 200ms',
+            }}
+          >
+            <RuntimeBadge agentType={rt} />
+          </button>
+        ))}
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={selected}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            padding: 14, borderRadius: 10,
+            background: `color-mix(in srgb, ${detail.color} 10%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${detail.color} 35%, transparent)`,
+          }}
+        >
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            background: detail.color, color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 600,
+          }}>
+            {detail.label[0].toUpperCase()}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500 }}>{detail.tagline}</div>
+            <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+              agent_type: {detail.label}
+            </div>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Animated mini task board ─────────────────────────────────────────────
+const BOARD_TASKS = [
+  { id: 't1', title: 'Draft release notes', from: 0 },
+  { id: 't2', title: 'Refactor merge logic', from: 0 },
+  { id: 't3', title: 'Wire LinkedIn page', from: 1 },
+  { id: 't4', title: 'Add runtime badges', from: 2 },
+];
+
+const COLUMN_LABELS = ['Open', 'In progress', 'Blocked', 'Done'];
+
+function MiniBoard() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setTick(t => t + 1), 1800);
+    return () => clearInterval(iv);
+  }, []);
+  // Each task progresses Open(0) → In progress(1) → Done(3), looping.
+  const progression = [0, 1, 3];
+  const stages = BOARD_TASKS.map((t, i) => {
+    const idx = (Math.floor(tick / 1) + i) % progression.length;
+    return progression[idx];
+  });
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10,
+      padding: 16, border: '1px solid var(--border)', borderRadius: 12,
+      background: 'var(--bg-raised)',
+    }}>
+      {COLUMN_LABELS.map((col, ci) => (
+        <div key={col} style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 140 }}>
+          <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600 }}>
+            {col}
+          </div>
+          <AnimatePresence>
+            {BOARD_TASKS.filter((_, i) => stages[i] === ci).map((task) => (
+              <motion.div
+                key={task.id}
+                layout
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.85 }}
+                transition={{ duration: 0.35, ease: [0.2, 0.7, 0.3, 1] }}
+                style={{
+                  padding: '8px 10px', borderRadius: 6,
+                  background: ci === 3 ? 'color-mix(in srgb, var(--state-ok) 14%, var(--bg))'
+                            : ci === 1 ? 'color-mix(in srgb, var(--accent) 14%, var(--bg))'
+                            : 'var(--bg)',
+                  border: `1px solid ${ci === 3 ? 'var(--state-ok)' : ci === 1 ? 'var(--accent-line)' : 'var(--border)'}`,
+                  fontSize: 11, color: 'var(--fg)',
+                  fontFamily: 'var(--font-mono)',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {ci === 3 ? <CheckCircle2 size={11} style={{ color: 'var(--state-ok)' }} />
+                 : ci === 1 ? <Clock size={11} style={{ color: 'var(--accent)' }} />
+                 : <Circle size={11} style={{ color: 'var(--fg-muted)' }} />}
+                {task.title}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Animated plan flow diagram ───────────────────────────────────────────
+const PLAN_STEPS = [
+  { name: 'Maya',  role: 'researcher',  color: '#B084EB' },
+  { name: 'Iris',  role: 'designer',    color: '#E89151' },
+  { name: 'Theo',  role: 'implementer', color: '#10A37F' },
+  { name: 'Ren',   role: 'writer',      color: '#D29A3F' },
+  { name: 'Jules', role: 'coordinator', color: '#6B7280' },
+];
+
+function PlanFlow() {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setActive(a => (a + 1) % (PLAN_STEPS.length + 1)), 1100);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div style={{
+      padding: 22, border: '1px solid var(--border)', borderRadius: 12,
+      background: 'var(--bg-raised)',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 8, overflow: 'hidden',
+    }}>
+      {PLAN_STEPS.map((step, i) => {
+        const done = i < active;
+        const live = i === active;
+        return (
+          <div key={step.name} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+            <motion.div
+              animate={live ? {
+                scale: [1, 1.08, 1],
+                boxShadow: [
+                  `0 0 0 0 ${step.color}00`,
+                  `0 0 0 6px ${step.color}40`,
+                  `0 0 0 0 ${step.color}00`,
+                ],
+              } : { scale: 1, boxShadow: `0 0 0 0 ${step.color}00` }}
+              transition={live ? { duration: 1.1, repeat: Infinity } : { duration: 0.3 }}
+              style={{
+                width: 44, height: 44, borderRadius: '50%',
+                background: done || live ? step.color : 'var(--bg)',
+                border: `2px solid ${step.color}`,
+                opacity: done || live ? 1 : 0.45,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: done || live ? 'white' : 'var(--fg-muted)',
+                fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              {done ? <CheckCircle2 size={18} /> : step.name[0]}
+            </motion.div>
+            <div style={{ marginLeft: 8, flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: 'var(--fg)', fontWeight: 500 }}>{step.name}</div>
+              <div style={{ fontSize: 9, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>{step.role}</div>
+            </div>
+            {i < PLAN_STEPS.length - 1 && (
+              <motion.div
+                animate={{ opacity: done ? 1 : 0.25, x: done ? 0 : -4 }}
+                transition={{ duration: 0.3 }}
+                style={{ color: step.color, marginRight: 4, flexShrink: 0 }}
+              >
+                <ArrowRight size={14} />
+              </motion.div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Dispatcher pulse visualization ───────────────────────────────────────
+function DispatcherPulse() {
+  return (
+    <div style={{
+      padding: 22, border: '1px solid var(--border)', borderRadius: 12,
+      background: 'var(--bg-raised)', display: 'flex', alignItems: 'center', gap: 18,
+    }}>
+      <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
+        {[0, 1, 2].map(i => (
+          <motion.div
+            key={i}
+            style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              border: '1.5px solid var(--state-ok)',
+            }}
+            animate={{ scale: [1, 2.2], opacity: [0.6, 0] }}
+            transition={{
+              duration: 2.4, repeat: Infinity, delay: i * 0.8, ease: 'easeOut',
+            }}
+          />
+        ))}
+        <div style={{
+          position: 'absolute', inset: 18, borderRadius: '50%',
+          background: 'var(--state-ok)',
+        }} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500, marginBottom: 4 }}>
+          Tick every 4 seconds
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--fg-secondary)' }}>
+          Scans auto-personas → finds open tasks with matching skills → assigns.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Animated PR row ──────────────────────────────────────────────────────
+function AnimatedPR() {
+  const states = [
+    { label: 'pending',  color: 'var(--state-warn)', icon: Clock },
+    { label: 'approved', color: 'var(--accent)',     icon: CheckCircle2 },
+    { label: 'merged',   color: 'var(--state-ok)',   icon: GitMerge },
+  ];
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setI(x => (x + 1) % states.length), 1500);
+    return () => clearInterval(iv);
+  }, [states.length]);
+  const s = states[i];
+  const Icon = s.icon;
+  return (
+    <div style={{
+      padding: 16, border: '1px solid var(--border)', borderRadius: 10,
+      background: 'var(--bg-raised)',
+      display: 'flex', alignItems: 'center', gap: 14,
+    }}>
+      <GitPullRequest size={16} style={{ color: 'var(--fg-muted)' }} />
+      <div style={{ flex: 1, fontSize: 13, color: 'var(--fg)', fontFamily: 'var(--font-mono)' }}>
+        feat/runtime-badges → main
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={s.label}
+          initial={{ opacity: 0, x: 6 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -6 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 999,
+            background: `color-mix(in srgb, ${s.color} 14%, transparent)`,
+            border: `1px solid ${s.color}`, color: s.color,
+            fontSize: 10, fontFamily: 'var(--font-mono)',
+            textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600,
+          }}
+        >
+          <Icon size={11} />
+          {s.label}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Typing-marker animation for [DONE] ───────────────────────────────────
+function TypingDone() {
+  const phrases = ['working...', 'compiling fixes', 'pushing branch', '[DONE]'];
+  const [idx, setIdx] = useState(0);
+  const [text, setText] = useState('');
+  useEffect(() => {
+    const target = phrases[idx];
+    let i = 0;
+    const typeIv = setInterval(() => {
+      i++;
+      setText(target.slice(0, i));
+      if (i >= target.length) {
+        clearInterval(typeIv);
+        setTimeout(() => setIdx((idx + 1) % phrases.length), 1200);
+      }
+    }, 60);
+    return () => clearInterval(typeIv);
+  }, [idx]);
+  const isDone = phrases[idx] === '[DONE]';
+  return (
+    <div style={{
+      padding: 14, borderRadius: 8,
+      background: 'var(--bg-inset)', border: '1px solid var(--border)',
+      fontFamily: 'var(--font-mono)', fontSize: 12,
+      color: isDone ? 'var(--state-ok)' : 'var(--fg-secondary)',
+      display: 'flex', alignItems: 'center', gap: 6, minHeight: 38,
+    }}>
+      <span style={{ color: 'var(--fg-muted)' }}>$</span>
+      <span>{text}</span>
+      <motion.span
+        animate={{ opacity: [1, 0] }}
+        transition={{ duration: 0.6, repeat: Infinity, repeatType: 'reverse' }}
+        style={{ display: 'inline-block', width: 7, height: 14, background: 'currentColor', marginLeft: 1 }}
+      />
+    </div>
+  );
+}
+
+// ─── Page kind toggler ────────────────────────────────────────────────────
+function PageKindToggle() {
+  const [kind, setKind] = useState<'markdown' | 'analytics'>('markdown');
+  return (
+    <div style={{
+      padding: 16, border: '1px solid var(--border)', borderRadius: 12,
+      background: 'var(--bg-raised)',
+    }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {(['markdown', 'analytics'] as const).map(k => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            style={{
+              cursor: 'pointer',
+              padding: '6px 14px', borderRadius: 6,
+              fontSize: 11, fontFamily: 'var(--font-mono)',
+              border: `1px solid ${kind === k ? 'var(--accent)' : 'var(--border)'}`,
+              background: kind === k ? 'var(--accent-soft)' : 'transparent',
+              color: kind === k ? 'var(--accent)' : 'var(--fg-muted)',
+              transition: 'all 200ms',
+            }}
+          >
+            kind: {k}
+          </button>
+        ))}
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={kind}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25 }}
+        >
+          {kind === 'markdown' ? (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg)', lineHeight: 1.7 }}>
+              <div style={{ color: 'var(--fg-muted)' }}># Week of May 10</div>
+              <div>Shipped slice 3, runtime badges, themes fix.</div>
+              <div style={{ color: 'var(--fg-muted)' }}>- bullet</div>
+              <div style={{ color: 'var(--fg-muted)' }}>- bullet</div>
+            </div>
+          ) : (
+            <AnimatedStatGrid />
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function AnimatedStatGrid() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      {[
+        { l: 'Followers', v: 333, c: 'var(--state-ok)' },
+        { l: 'Impressions', v: 120, c: 'var(--state-error)' },
+        { l: 'Profile views', v: 132, c: 'var(--fg-secondary)' },
+      ].map((s, i) => (
+        <motion.div
+          key={s.l}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.08, duration: 0.3 }}
+          style={{
+            padding: 10, border: '1px solid var(--border)', borderRadius: 6,
+            background: 'var(--bg)',
+          }}
+        >
+          <div style={{ fontSize: 9, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{s.l}</div>
+          <CountUp from={0} to={s.v} duration={0.9} style={{ fontSize: 20, fontWeight: 600, color: 'var(--fg)' }} />
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+function CountUp({ from, to, duration, style }: { from: number; to: number; duration: number; style?: React.CSSProperties }) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const mv = useMotionValue(from);
+  useEffect(() => {
+    const controls = animate(mv, to, { duration, ease: [0.2, 0.7, 0.3, 1] });
+    const unsubscribe = mv.on('change', v => {
+      if (ref.current) ref.current.textContent = Math.round(v).toString();
+    });
+    return () => { controls.stop(); unsubscribe(); };
+  }, [mv, to, duration]);
+  return <span ref={ref} style={style}>{from}</span>;
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────
 export default function TutorialPage() {
   const [active, setActive] = useState('welcome');
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Highlight the section currently in view so the sidebar tracks scroll.
   useEffect(() => {
     const observer = new IntersectionObserver(
       entries => {
         const visible = entries.filter(e => e.isIntersecting);
         if (visible.length > 0) {
-          // Pick the highest one currently on screen.
           const top = visible.reduce((a, b) => (a.boundingClientRect.top < b.boundingClientRect.top ? a : b));
           setActive(top.target.id);
         }
@@ -45,36 +521,24 @@ export default function TutorialPage() {
   }, []);
 
   return (
-    <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
+    <div style={{ display: 'flex', height: '100%', minHeight: 0, position: 'relative' }}>
+      <ScrollProgress container={scrollRef} />
+
       <aside style={{
-        width: 220,
-        flexShrink: 0,
-        borderRight: '1px solid var(--border)',
-        background: 'var(--bg-raised)',
-        padding: '20px 12px',
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
+        width: 220, flexShrink: 0,
+        borderRight: '1px solid var(--border)', background: 'var(--bg-raised)',
+        padding: '20px 12px', overflowY: 'auto',
+        display: 'flex', flexDirection: 'column', gap: 4,
       }}>
         <Link href="/" style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          color: 'var(--fg-muted)',
-          fontSize: 12,
-          textDecoration: 'none',
-          marginBottom: 12,
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          color: 'var(--fg-muted)', fontSize: 12, textDecoration: 'none', marginBottom: 12,
         }}>
           <ArrowLeft size={12} /> back to OS
         </Link>
         <div style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: 0.6,
-          color: 'var(--fg-muted)',
-          padding: '4px 8px',
-          marginBottom: 6,
+          fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6,
+          color: 'var(--fg-muted)', padding: '4px 8px', marginBottom: 6,
         }}>
           tutorial
         </div>
@@ -82,249 +546,283 @@ export default function TutorialPage() {
           const Icon = s.icon;
           const isActive = active === s.id;
           return (
-            <a
+            <motion.a
               key={s.id}
               href={`#${s.id}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 10px',
-                borderRadius: 6,
-                fontSize: 13,
+              animate={{
+                background: isActive ? 'var(--bg-hover)' : 'rgba(0,0,0,0)',
                 color: isActive ? 'var(--fg)' : 'var(--fg-secondary)',
-                background: isActive ? 'var(--bg-hover)' : 'transparent',
-                textDecoration: 'none',
+              }}
+              whileHover={{ x: 2 }}
+              transition={{ duration: 0.2 }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 10px', borderRadius: 6,
+                fontSize: 13, textDecoration: 'none',
                 fontWeight: isActive ? 500 : 400,
               }}
             >
               <Icon className="w-3 h-3" strokeWidth={1.75} />
               {s.label}
-            </a>
+            </motion.a>
           );
         })}
       </aside>
 
-      <main style={{ flex: 1, overflowY: 'auto', padding: '32px 48px', maxWidth: 880 }}>
-        <Section id="welcome" title="Welcome to Boardroom" icon={Rocket}>
-          <Lead>
-            Boardroom is an agentic operating system. You build a team of <em>personas</em> — named workers with skills and a runtime — and hand them tasks or multi-step plans. They run in real worktrees, push real branches, open real PRs, and you review them through the <code>/review</code> queue.
-          </Lead>
-          <P>
-            This tutorial walks through every concept you'll touch, in roughly the order you'll touch them. Use the sidebar to jump around — nothing here builds on the previous section so much that you can't skim.
-          </P>
-          <Callout title="Five-minute version">
-            <ol style={listStyle}>
-              <li>Install a starter pack in the onboarding modal → you get a team of personas.</li>
-              <li>From <Link href="/" style={linkStyle}>the OS home</Link>, type a task into the composer and assign a persona.</li>
-              <li>The persona spawns a real CLI agent in a worktree. When it exits with <code>[DONE]</code>, an auto-PR opens.</li>
-              <li>Approve it in <Link href="/review" style={linkStyle}>/review</Link>. The branch merges back into main.</li>
-              <li>For anything bigger, use <Link href="/planning" style={linkStyle}>/planning</Link> to chain N tasks across N personas.</li>
-            </ol>
-          </Callout>
-        </Section>
-
-        <Section id="personas" title="Personas" icon={Users}>
-          <Lead>A persona is a saved bundle of: name, role, color, skills, system prompt, autonomy (manual or auto), and a runtime (claude / hermes / codex / opencode).</Lead>
-          <P>
-            Manage them on <Link href="/personas" style={linkStyle}>/personas</Link>. Each persona owns its own conversation context — when it wakes for a new task, it sees its own prior work (bounded to ~1500 chars) plus a peek at what the rest of the team has been doing (~800 chars).
-          </P>
-          <ul style={listStyle}>
-            <li><b>Autonomy = manual</b>: persona only runs when you explicitly assign or wake them.</li>
-            <li><b>Autonomy = auto</b>: dispatcher picks up matching open tasks for them every 4 seconds.</li>
-            <li><b>Skills</b>: free-form tags; the dispatcher matches them against a task's required_skills.</li>
-            <li><b>Reset session</b>: button on the persona detail page — useful if a stuck claude session won't resume.</li>
-          </ul>
-        </Section>
-
-        <Section id="runtimes" title="Runtimes" icon={Cpu}>
-          <Lead>Each persona runs on one of four CLIs. The runtime badge next to a persona's name tells you which.</Lead>
+      <main
+        ref={scrollRef}
+        style={{ flex: 1, overflowY: 'auto', padding: '40px 56px', maxWidth: 920 }}
+      >
+        <AnimatedSection
+          id="welcome"
+          title="Welcome to Boardroom"
+          icon={Rocket}
+          lead={<>An <em>agentic OS</em>. Build a team of named workers, hand them tasks, watch them open real PRs you review.</>}
+        >
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: 12,
-            margin: '12px 0',
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12,
+            marginTop: 8, marginBottom: 18,
           }}>
-            {(Object.keys(RUNTIME_STYLE) as Array<keyof typeof RUNTIME_STYLE>).map(rt => {
-              const { color, label, tagline } = RUNTIME_STYLE[rt];
-              return (
-                <div key={rt} style={{
-                  padding: 14,
-                  border: '1px solid var(--border)',
-                  background: 'var(--bg-raised)',
-                  borderLeft: `3px solid ${color}`,
-                  borderRadius: 8,
+            {[
+              { n: '1', t: 'Install a starter pack' },
+              { n: '2', t: 'Type a task in the composer' },
+              { n: '3', t: 'Persona opens a PR' },
+              { n: '4', t: 'Approve in /review' },
+            ].map((s, i) => (
+              <motion.div
+                key={s.n}
+                initial={{ opacity: 0, y: 12 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.05 * i, duration: 0.45 }}
+                whileHover={{ y: -2, borderColor: 'var(--accent)' }}
+                style={{
+                  padding: 16, border: '1px solid var(--border)', borderRadius: 10,
+                  background: 'var(--bg-raised)', display: 'flex', flexDirection: 'column', gap: 6,
+                }}
+              >
+                <div style={{
+                  width: 26, height: 26, borderRadius: '50%',
+                  background: 'var(--accent-soft)', color: 'var(--accent)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
                 }}>
-                  <div style={{ marginBottom: 8 }}>
-                    <RuntimeBadge agentType={rt} />
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--fg-secondary)', lineHeight: 1.5 }}>
-                    {tagline}
-                  </div>
+                  {s.n}
                 </div>
-              );
-            })}
+                <div style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.4 }}>{s.t}</div>
+              </motion.div>
+            ))}
           </div>
-          <Callout title="When to pick what">
-            <ul style={listStyle}>
-              <li><b>Claude</b> — default; best for code, planning, anything with Anthropic tools. Persistent session resumes across tasks.</li>
-              <li><b>Hermes</b> — routes through OpenRouter; great for cheap research / writing personas. Avoid <code>:free</code> SKUs for long-context plans.</li>
-              <li><b>Codex / Opencode</b> — OpenAI Codex CLI and the open-source agent CLI; both run via PTY and exit on the <code>[DONE]</code> marker.</li>
-            </ul>
+          <TypingDone />
+        </AnimatedSection>
+
+        <AnimatedSection
+          id="personas"
+          title="Personas"
+          icon={Users}
+          lead={<>Named workers — each carries a name, color, skills, system prompt, autonomy, and runtime.</>}
+        >
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10,
+          }}>
+            {PLAN_STEPS.slice(0, 4).map((p, i) => (
+              <motion.div
+                key={p.name}
+                initial={{ opacity: 0, scale: 0.94 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.06 * i, duration: 0.4 }}
+                whileHover={{ y: -3 }}
+                style={{
+                  padding: 14, border: '1px solid var(--border)', borderRadius: 10,
+                  background: 'var(--bg-raised)',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                }}
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  background: p.color, color: 'white',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'var(--font-mono)', fontSize: 14, fontWeight: 600, flexShrink: 0,
+                }}>
+                  {p.name[0]}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13, color: 'var(--fg)', fontWeight: 500 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>{p.role}</div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </AnimatedSection>
+
+        <AnimatedSection
+          id="runtimes"
+          title="Runtimes"
+          icon={Cpu}
+          lead={<>Click a badge — see which CLI actually runs when the persona wakes.</>}
+        >
+          <RuntimeSelector />
+        </AnimatedSection>
+
+        <AnimatedSection
+          id="board"
+          title="The task board"
+          icon={ListTodo}
+          lead={<>Four columns. Cards flow Open → In progress → Done.</>}
+        >
+          <MiniBoard />
+        </AnimatedSection>
+
+        <AnimatedSection
+          id="plans"
+          title="Plans"
+          icon={Layers}
+          lead={<>Chain N subtasks across N personas. Sequential plans with auto-merge accumulate edits into one final result.</>}
+        >
+          <PlanFlow />
+          <Callout title="zsh modifier trap" style={{ marginTop: 16 }}>
+            Never inline persona ids in shell args — zsh's <code>:t</code> / <code>:r</code> / <code>:e</code> mangle <code>$PROJ:theo</code> into <code>$PROJ_t + heo</code>. Use a heredoc'd JSON file + <code>curl -d @file</code>.
           </Callout>
-        </Section>
+        </AnimatedSection>
 
-        <Section id="board" title="The task board" icon={ListTodo}>
-          <Lead>The OS home page is a four-column kanban: Open · In Progress · Blocked · Done. New tasks land in Open.</Lead>
-          <ul style={listStyle}>
-            <li>Type into the floating composer at the bottom (or hit <kbd style={kbdStyle}>/</kbd>) to draft a task.</li>
-            <li>Assign to a persona before you submit, or leave unassigned for the dispatcher to pick up.</li>
-            <li>Click any task card to drill into its full history, result, and any push request it opened.</li>
-            <li>Cancel a task to mark it <code>cancelled</code>; cancelled tasks older than 24h auto-prune at server boot.</li>
-          </ul>
-        </Section>
+        <AnimatedSection
+          id="dispatcher"
+          title="Auto-pickup dispatcher"
+          icon={Activity}
+          lead={<>Set a persona to autonomy=auto. The dispatcher tick will find it work.</>}
+        >
+          <DispatcherPulse />
+        </AnimatedSection>
 
-        <Section id="plans" title="Plans" icon={Layers}>
-          <Lead>A plan is an ordered set of subtasks across personas. Use them when one task isn't enough — e.g. "Research → Design → Implement → Review → Ship".</Lead>
-          <P>
-            Build plans on <Link href="/planning" style={linkStyle}>/planning</Link>. Two execution modes:
+        <AnimatedSection
+          id="review"
+          title="Reviewing PRs"
+          icon={GitPullRequest}
+          lead={<>Every finished task opens a push request. Batch-approve, revert, or let the conflict resolver handle merge conflicts.</>}
+        >
+          <AnimatedPR />
+        </AnimatedSection>
+
+        <AnimatedSection
+          id="custom-pages"
+          title="Custom pages (Slice 3)"
+          icon={BookOpen}
+          lead={<>Agents author pages at <code>/custom/[slug]</code>. Two kinds today — markdown or analytics.</>}
+        >
+          <PageKindToggle />
+          <P style={{ marginTop: 14 }}>
+            Personas POST to <code>/api/custom-pages</code> with a slug, title, kind, and content payload.
+            See the <Link href="/custom/linkedin-analytics" style={linkStyle}>linkedin-analytics</Link> demo for a real example.
           </P>
-          <ul style={listStyle}>
-            <li><b>Sequential</b>: each subtask waits for the previous one. Combined with <code>auto_merge: true</code>, each step's PR merges before the next persona spawns — so chained edits accumulate into one final result.</li>
-            <li><b>Parallel</b>: all subtasks dispatch at once. Use when steps are independent (research splits, multi-faceted reviews).</li>
-          </ul>
-          <Callout title="zsh modifier gotcha">
-            When you create plans via the CLI, <em>never</em> inline persona ids in shell args. zsh's <code>:t</code> / <code>:r</code> / <code>:e</code> modifiers will silently mangle <code>$PROJ:theo</code> into <code>$PROJ_t + heo</code>. Always use a heredoc'd JSON file + <code>curl -d @file</code>. The plan API will 400 with an explicit hint if you forget.
-          </Callout>
-        </Section>
+        </AnimatedSection>
 
-        <Section id="dispatcher" title="The auto-pickup dispatcher" icon={Activity}>
-          <Lead>Every 4 seconds the dispatcher looks at every persona whose autonomy is set to auto, finds the first open task whose required skills match, and assigns it.</Lead>
-          <ul style={listStyle}>
-            <li>The dispatcher status pill is bottom-left of the OS home — green = ticking.</li>
-            <li>Skills are case-insensitive substring matches. A persona with skills <code>["research","summarize"]</code> will pick up a task tagged <code>research</code>.</li>
-            <li>Skill matching is greedy: first match wins. Order your persona skills accordingly.</li>
-            <li>Set a persona back to manual autonomy if you don't want it auto-grabbing things.</li>
-          </ul>
-        </Section>
+        <AnimatedSection
+          id="workflows"
+          title="Workflows + cron"
+          icon={Workflow}
+          lead={<>Wrap a plan in a cron schedule. Each tick spawns a fresh plan run.</>}
+        >
+          <div style={{
+            padding: 18, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-raised)',
+            display: 'flex', alignItems: 'center', gap: 18,
+          }}>
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+              style={{
+                width: 50, height: 50, borderRadius: '50%',
+                border: '2px solid var(--accent)',
+                position: 'relative', flexShrink: 0,
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 4, left: '50%', transform: 'translateX(-50%)',
+                width: 2, height: 14, background: 'var(--accent)', borderRadius: 2,
+              }} />
+            </motion.div>
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--fg)', fontFamily: 'var(--font-mono)' }}>0 9 * * MON</div>
+              <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>every Monday at 9am — fresh research drop into a custom page</div>
+            </div>
+          </div>
+        </AnimatedSection>
 
-        <Section id="review" title="Reviewing PRs" icon={GitPullRequest}>
-          <Lead>When an agent finishes a task in an isolated worktree, it auto-pushes its branch and opens a push request. <Link href="/review" style={linkStyle}>/review</Link> is the queue.</Lead>
-          <ul style={listStyle}>
-            <li><b>Batch approve / reject</b>: check multiple PRs and act on them with one click. Sequential merges with aggregated toast.</li>
-            <li><b>Resolver banner</b>: when a merge hits a conflict, a resolver agent spawns. You see its running / done / failed state inline and can retry from the UI.</li>
-            <li><b>Revert merge</b>: backs out a merged PR by running <code>git revert -m 1</code> on the canonical merge commit and flipping the PR row to rejected.</li>
-            <li><b>VS Code / Cursor deep-links</b>: file pills in the PR detail jump straight to the worktree-relative absolute path.</li>
-          </ul>
-        </Section>
-
-        <Section id="custom-pages" title="Custom pages (Slice 3)" icon={BookOpen}>
-          <Lead>Agents can author their own pages at <code>/custom/[slug]</code>. Two kinds today, more coming.</Lead>
-          <ul style={listStyle}>
-            <li><b>markdown</b>: plain markdown rendered server-side via a zero-dep renderer. No script eval, safe.</li>
-            <li><b>analytics</b>: JSON payload that lays out stat cards (with trend arrows), tables, bullets, and free text. See <Link href="/custom" style={linkStyle}>/custom</Link> for the index, or the <Link href="/custom/linkedin-analytics" style={linkStyle}>linkedin-analytics</Link> demo page for a real example.</li>
-          </ul>
-          <Callout title="Authoring from a persona">
-            Personas can POST to <code>/api/custom-pages</code> from inside their worktree:
-            <pre style={preStyle}>{`curl -X POST http://localhost:7391/api/custom-pages \\
-  -H 'content-type: application/json' \\
-  -d '{"slug":"weekly-roundup","title":"Week of May 10","kind":"markdown",
-       "content":"# This week\\n- Shipped slice 3..."}'`}</pre>
-          </Callout>
-        </Section>
-
-        <Section id="workflows" title="Workflows + cron" icon={Workflow}>
-          <Lead>Recurring multi-step jobs live in <Link href="/workflows" style={linkStyle}>/workflows</Link>. They wrap plans with cron schedules.</Lead>
-          <ul style={listStyle}>
-            <li>Each scheduled run spawns a fresh plan execution at the configured cadence.</li>
-            <li>Humanized cron labels show the schedule in plain English alongside the cron expression.</li>
-            <li>Common pattern: a nightly research workflow that drops a fresh report into a custom page.</li>
-          </ul>
-        </Section>
-
-        <Section id="tips" title="Tips & gotchas" icon={Lightbulb}>
-          <ul style={listStyle}>
-            <li><b>OpenRouter <code>:free</code> models</b>: gate long-context requests behind paid usage. If a hermes persona silently hangs, switch its model to a non-free SKU.</li>
-            <li><b>Persistent claude sessions</b>: <code>--resume</code> reloads the whole prior conversation. After 4–5 plan subtasks the input alone can exceed 50k tokens; reset the session if you're starting a different thread.</li>
-            <li><b>Worktree cruft</b>: <code>/tmp/&lt;repo&gt;/.git/worktrees/</code> accumulates dirs from interrupted runs. <code>git worktree prune</code> in the repo cleans it up.</li>
-            <li><b>Ghost agents</b>: rows that say running but whose PID is dead get reaped at server boot. Force a sweep by restarting the dev server.</li>
-            <li><b>[ASK_USER] / [HANDOFF] / [DONE]</b>: signal markers personas emit in prose. <code>[DONE]</code> terminates the agent; <code>[ASK_USER]</code> flips status to needs_input and queues a pending question.</li>
-          </ul>
-          <P>
-            That's the tour. <Link href="/" style={linkStyle}>Back to the OS home <ChevronRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></Link>
-          </P>
-        </Section>
+        <AnimatedSection
+          id="tips"
+          title="Tips"
+          icon={Lightbulb}
+          lead={<>The small things you'll run into.</>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { k: 'OpenRouter :free models', v: 'Gate long-context behind paid usage. Swap to a non-free SKU if a hermes persona silently hangs.' },
+              { k: 'Persistent claude sessions', v: '--resume reloads the whole prior conversation. Reset the session for fresh threads.' },
+              { k: 'Worktree cruft', v: 'Run git worktree prune in /tmp/<repo>/.git/worktrees/ periodically.' },
+              { k: 'Markers', v: '[DONE] terminates the agent; [ASK_USER] flips status to needs_input; [HANDOFF] passes work.' },
+            ].map((t, i) => (
+              <motion.div
+                key={t.k}
+                initial={{ opacity: 0, x: -8 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.05 * i, duration: 0.35 }}
+                style={{
+                  padding: 12, borderLeft: '3px solid var(--accent)',
+                  background: 'var(--bg-raised)', borderRadius: '0 8px 8px 0',
+                }}
+              >
+                <div style={{ fontSize: 12, color: 'var(--fg)', fontWeight: 600, marginBottom: 2 }}>{t.k}</div>
+                <div style={{ fontSize: 12, color: 'var(--fg-secondary)', lineHeight: 1.5 }}>{t.v}</div>
+              </motion.div>
+            ))}
+          </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.25 }}
+            style={{ marginTop: 24, textAlign: 'center' }}
+          >
+            <Link href="/" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '10px 20px', borderRadius: 8,
+              background: 'var(--accent)', color: 'var(--accent-fg)',
+              fontSize: 13, fontWeight: 500, textDecoration: 'none',
+            }}>
+              Back to the OS <ChevronRight size={14} />
+            </Link>
+          </motion.div>
+        </AnimatedSection>
       </main>
     </div>
   );
 }
 
-function Section({
-  id,
-  title,
-  icon: Icon,
-  children,
-}: {
-  id: string;
-  title: string;
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number; size?: number }>;
-  children: React.ReactNode;
-}) {
+function P({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <section id={id} style={{ scrollMarginTop: 24, marginBottom: 56 }}>
-      <h2 style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        fontSize: 22,
-        fontWeight: 600,
-        color: 'var(--fg)',
-        marginTop: 0,
-        marginBottom: 16,
-        paddingBottom: 10,
-        borderBottom: '1px solid var(--border)',
-      }}>
-        <Icon size={18} strokeWidth={1.5} />
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function Lead({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{ color: 'var(--fg)', fontSize: 16, lineHeight: 1.55, margin: '0 0 14px' }}>
+    <p style={{ color: 'var(--fg-secondary)', fontSize: 14, lineHeight: 1.65, margin: 0, ...style }}>
       {children}
     </p>
   );
 }
 
-function P({ children }: { children: React.ReactNode }) {
+function Callout({ title, children, style }: { title: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <p style={{ color: 'var(--fg-secondary)', fontSize: 14, lineHeight: 1.65, margin: '0 0 12px' }}>
-      {children}
-    </p>
-  );
-}
-
-function Callout({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{
-      padding: 14,
-      border: '1px solid var(--accent-line)',
-      background: 'var(--accent-soft)',
-      borderRadius: 8,
-      marginTop: 12,
-      marginBottom: 4,
-    }}>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay: 0.1 }}
+      style={{
+        padding: 14, border: '1px solid var(--accent-line)',
+        background: 'var(--accent-soft)', borderRadius: 8,
+        ...style,
+      }}
+    >
       <div style={{
-        fontSize: 11,
-        textTransform: 'uppercase',
-        letterSpacing: 0.6,
-        color: 'var(--accent)',
-        fontWeight: 600,
-        marginBottom: 6,
+        fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6,
+        color: 'var(--accent)', fontWeight: 600, marginBottom: 6,
       }}>
         <Sparkles size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
         {title}
@@ -332,44 +830,11 @@ function Callout({ title, children }: { title: string; children: React.ReactNode
       <div style={{ color: 'var(--fg-secondary)', fontSize: 13, lineHeight: 1.6 }}>
         {children}
       </div>
-    </div>
+    </motion.div>
   );
 }
-
-const listStyle: React.CSSProperties = {
-  margin: 0,
-  paddingLeft: 20,
-  color: 'var(--fg-secondary)',
-  fontSize: 14,
-  lineHeight: 1.75,
-};
 
 const linkStyle: React.CSSProperties = {
   color: 'var(--accent)',
   textDecoration: 'none',
-};
-
-const kbdStyle: React.CSSProperties = {
-  display: 'inline-block',
-  padding: '1px 6px',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  background: 'var(--bg-raised)',
-  color: 'var(--fg)',
-  fontSize: 11,
-  fontFamily: 'var(--font-mono, monospace)',
-};
-
-const preStyle: React.CSSProperties = {
-  marginTop: 8,
-  marginBottom: 0,
-  padding: 10,
-  background: 'var(--bg-inset)',
-  border: '1px solid var(--border)',
-  borderRadius: 6,
-  fontSize: 11,
-  fontFamily: 'var(--font-mono, monospace)',
-  color: 'var(--fg)',
-  overflowX: 'auto',
-  whiteSpace: 'pre-wrap',
 };
