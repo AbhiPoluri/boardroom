@@ -236,7 +236,7 @@ export default function PlanningPage() {
 
   return (
     <div className="brr-os-planning-page">
-      <aside className="brr-os-planning-list">
+      <aside className="brr-os-planning-list" data-tour="plans-list">
         <div className="brr-os-pane-head">
           <span className="brr-os-pane-title"><ListTodo className="w-3 h-3" strokeWidth={1.75} /> plans</span>
           <button

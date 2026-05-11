@@ -9,6 +9,7 @@ import {
   CheckCircle2, Circle, Clock, GitMerge, ArrowRight,
 } from 'lucide-react';
 import { RuntimeBadge, RUNTIME_STYLE, type PersonaRuntime } from '@/components/RuntimeBadge';
+import { useTour } from '@/lib/tour-context';
 
 const SECTIONS: Array<{ id: string; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }> = [
   { id: 'welcome',       label: 'Welcome',         icon: Rocket },
@@ -579,6 +580,7 @@ export default function TutorialPage() {
           icon={Rocket}
           lead={<>An <em>agentic OS</em>. Build a team of named workers, hand them tasks, watch them open real PRs you review.</>}
         >
+          <StartTourCTA />
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12,
             marginTop: 8, marginBottom: 18,
@@ -796,6 +798,57 @@ export default function TutorialPage() {
         </AnimatedSection>
       </main>
     </div>
+  );
+}
+
+function StartTourCTA() {
+  const { start } = useTour();
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.5 }}
+      style={{
+        marginBottom: 22,
+        padding: 18,
+        borderRadius: 12,
+        background: 'linear-gradient(135deg, var(--accent-soft), transparent 70%)',
+        border: '1px solid var(--accent-line)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 14, color: 'var(--fg)', fontWeight: 500, marginBottom: 4 }}>
+          Take the guided tour
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--fg-secondary)' }}>
+          Walks you through every real page with a spotlight on each surface — about a minute.
+        </div>
+      </div>
+      <motion.button
+        type="button"
+        onClick={start}
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.98 }}
+        style={{
+          background: 'var(--accent)',
+          color: 'var(--accent-fg)',
+          border: 'none',
+          padding: '10px 18px',
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          fontFamily: 'inherit',
+        }}
+      >
+        <Sparkles size={14} />
+        Start tour
+      </motion.button>
+    </motion.div>
   );
 }
 

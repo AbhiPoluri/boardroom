@@ -84,6 +84,7 @@ export function FloatingChatDock({ expanded, onExpandedChange, prCount = 0 }: Fl
   return (
     <div
       ref={dockRef}
+      data-tour="composer"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] hidden md:block pointer-events-auto"

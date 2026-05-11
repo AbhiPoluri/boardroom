@@ -54,7 +54,7 @@ export default function CustomPagesIndex() {
   }
 
   return (
-    <div className="brr-os-pane brr-os-pane--right" style={{ height: '100%', overflowY: 'auto' }}>
+    <div className="brr-os-pane brr-os-pane--right" data-tour="custom-list" style={{ height: '100%', overflowY: 'auto' }}>
       <div className="brr-os-pane-head">
         <span className="brr-os-pane-title">
           <FileText size={14} />

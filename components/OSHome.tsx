@@ -235,7 +235,7 @@ export default function OSHome() {
     <>
     <OnboardingModal />
     <div className={`brr-os-shell ${inboxCollapsed ? 'inbox-collapsed' : ''}`}>
-      <aside className="brr-os-pane brr-os-pane--left">
+      <aside className="brr-os-pane brr-os-pane--left" data-tour="personas-pane">
         <div className="brr-os-pane-head">
           <span className="brr-os-pane-title">
             <Users className="w-3 h-3" strokeWidth={1.75} /> personas
@@ -272,7 +272,7 @@ export default function OSHome() {
         </div>
       </aside>
 
-      <main className="brr-os-pane brr-os-pane--center">
+      <main className="brr-os-pane brr-os-pane--center" data-tour="task-board">
         <div className="brr-os-pane-head">
           <span className="brr-os-pane-title">
             <ListTodo className="w-3 h-3" strokeWidth={1.75} /> task board

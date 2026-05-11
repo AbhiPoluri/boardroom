@@ -148,7 +148,7 @@ export default function PersonasPage() {
 
   return (
     <div className="brr-os-personas-page">
-      <aside className="brr-os-personas-list">
+      <aside className="brr-os-personas-list" data-tour="personas-list">
         <div className="brr-os-pane-head">
           <span className="brr-os-pane-title">personas</span>
           <button

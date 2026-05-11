@@ -190,7 +190,7 @@ export default function ReviewPage() {
 
   return (
     <div className="brr-os-review-page">
-      <aside className="brr-os-review-list">
+      <aside className="brr-os-review-list" data-tour="review-queue">
         <div className="brr-os-review-list-head">
           <span className="brr-os-pane-title">
             <GitPullRequest className="w-3 h-3" strokeWidth={1.75} /> review

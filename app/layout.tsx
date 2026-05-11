@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Newsreader, JetBrains_Mono } from "next/font/google";
 import AppShell from "@/components/AppShell";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { TourProvider } from "@/lib/tour-context";
+import { TourOverlay } from "@/components/TourOverlay";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,7 +53,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${jetBrainsMono.variable} antialiased bg-[var(--br-bg-primary)] text-[var(--br-text-primary)] h-full`}
       >
         <ThemeProvider>
-          <AppShell>{children}</AppShell>
+          <TourProvider>
+            <AppShell>{children}</AppShell>
+            <TourOverlay />
+          </TourProvider>
         </ThemeProvider>
       </body>
     </html>
