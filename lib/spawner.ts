@@ -708,7 +708,21 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       cols: 120,
       rows: 40,
       cwd: worktreePath,
-      env: { ...process.env, HOME: home, TERM: 'xterm-256color', COLORTERM: 'truecolor', CLAUDE_CODE_ENTRYPOINT: '', CLAUDECODE: '' } as Record<string, string>,
+      env: {
+        ...process.env,
+        HOME: home,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        CLAUDE_CODE_ENTRYPOINT: '',
+        CLAUDECODE: '',
+        // Hermes is a Python CLI and Python block-buffers stdout when not
+        // attached to a "real" TTY in some environments — even via node-pty.
+        // The result is no streaming output in the boardroom UI until the
+        // whole run completes. Force unbuffered Python I/O so each print
+        // flushes immediately. No-op for codex (Node) and opencode (Go).
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8',
+      } as Record<string, string>,
     });
 
     processes.set(agentId, ptyProc as unknown as ChildProcess);
