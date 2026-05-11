@@ -132,6 +132,17 @@ export function onSubtaskCompleted(planId: string): void {
   const allDone = subtasks.every(t => t.status === 'done' || t.status === 'cancelled');
   if (allDone) {
     updatePlan(planId, { status: 'done', finished_at: Date.now() });
+    // Autonomous loop hook: if this plan was spawned from a user goal, the
+    // orchestrator gets re-invoked with the plan's results so it can decide
+    // whether the goal is met or another plan is needed. No-op when the
+    // plan has no continuation_goal.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { maybeRunContinuation } = require('./autonomous-loop') as typeof import('./autonomous-loop');
+      maybeRunContinuation(planId);
+    } catch (err) {
+      console.error('[plans] autonomous-loop hook failed:', err);
+    }
     return;
   }
 

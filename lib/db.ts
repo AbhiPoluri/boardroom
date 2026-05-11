@@ -540,6 +540,16 @@ function initSchema(db: Database.Database): void {
     setVersion(23);
   }
 
+  if (currentVersion < 24) {
+    // Autonomous loop: persist the original user goal that spawned the plan
+    // so when the plan finishes, the orchestrator can be re-invoked with the
+    // goal as context and decide whether to keep going (new follow-up plan)
+    // or declare the goal met. Cleared when the user explicitly stops or the
+    // orchestrator marks the goal done.
+    try { db.exec(`ALTER TABLE plans ADD COLUMN continuation_goal TEXT`); } catch {}
+    setVersion(24);
+  }
+
   // Unconditional safety: ensure a default project always exists. Rebinds any
   // orphaned personas/agents/tasks to it. Previously this was gated on schema
   // version, which left users with an empty projects table stranded.
@@ -1954,6 +1964,11 @@ export interface Plan {
   updated_at: number;
   started_at: number | null;
   finished_at: number | null;
+  /** Original user goal when the orchestrator created this plan. Used by
+   *  the autonomous loop: when the plan finishes, the orchestrator is
+   *  re-invoked with this goal as context to decide whether more work is
+   *  needed. Null when no continuation is desired. */
+  continuation_goal: string | null;
 }
 
 export interface PlanWithSubtasks extends Plan {
@@ -2036,12 +2051,13 @@ export function createPlan(p: {
   project_id?: string | null;
   execution_mode?: PlanExecutionMode;
   auto_merge?: boolean;
+  continuation_goal?: string | null;
 }): void {
   const db = getDb();
   const now = Date.now();
   db.prepare(`
-    INSERT INTO plans (id, project_id, title, description, status, execution_mode, auto_merge, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+    INSERT INTO plans (id, project_id, title, description, status, execution_mode, auto_merge, continuation_goal, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
   `).run(
     p.id,
     p.project_id ?? getSetting('active_project_id') ?? 'default',
@@ -2049,6 +2065,7 @@ export function createPlan(p: {
     p.description ?? null,
     p.execution_mode ?? 'parallel',
     p.auto_merge ? 1 : 0,
+    p.continuation_goal ?? null,
     now,
     now,
   );

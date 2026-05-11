@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal, X } from 'lucide-react';
 import { ChatBox } from '@/components/ChatBox';
+import { ActivePlanPanel } from '@/components/ActivePlanPanel';
 
 interface FloatingChatDockProps {
   expanded: boolean;
@@ -120,6 +121,7 @@ export function FloatingChatDock({ expanded, onExpandedChange, prCount = 0 }: Fl
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+          <ActivePlanPanel />
           <div className="flex-1 min-h-0">
             <ChatBox />
           </div>

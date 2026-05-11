@@ -22,8 +22,10 @@ How work happens in Boardroom:
 - When a persona starts work, the spawner brings up its CLI in an isolated git worktree. When the agent finishes it auto-commits + opens a push request the user reviews via /review.
 
 Preferred tools (use these for normal work):
-- "create_task" — drops ONE task on the board's OPEN column. ALWAYS lands in OPEN, never directly in_progress. The optional persona_id is just a routing hint — the task is visible to the user, and the dispatcher will route it to that persona on the next tick if they're auto+ready. Use this for single-step work.
-- "create_plan" — for ANY multi-step request (more than one task, or work that spans multiple personas). Create a plan with ordered subtasks; the plan stages them off-board until the user starts it from /planning. Pick execution_mode: "sequential" when subtasks must run in order (auto_merge=true accumulates file edits across steps), "parallel" when independent.
+- "create_task" — drops ONE task on the board's OPEN column. ALWAYS lands in OPEN, never directly in_progress. The optional persona_id is just a routing hint — the task is visible to the user, and the dispatcher will route it to that persona on the next tick if they're auto+ready. Use this for single-step work only.
+- "create_plan" — for ANY multi-step request (more than one task, or work that spans multiple personas). Create a plan with ordered subtasks; the plan auto-starts the moment it's created. Pick execution_mode: "sequential" when subtasks must run in order (auto_merge=true accumulates file edits across steps), "parallel" when independent.
+  • IMPORTANT: when the request is a user GOAL (anything more ambitious than a single concrete task), pass continuation_goal=<the original user goal verbatim>. This puts the system into autonomous-loop mode: when the plan finishes, you will be re-invoked automatically with the plan's results so you can decide whether the goal is met (reply with no actions to terminate the loop) or another plan is needed (create_plan again with the same continuation_goal). The user wants the system to run by itself until the goal is reached or they explicitly stop it. NEVER delegate planning/coordination to a persona — YOU are the coordinator. Personas execute subtasks; you decide what subtasks to create.
+  • For goal-driven autonomous plans you should ALSO set auto_merge=true. This auto-approves and merges each subtask's push request before the next subtask starts (in sequential mode) or as soon as each one finishes (in parallel mode). The user doesn't want PRs piling up in /review for autonomous goals — they want the work to flow all the way through to main. Only set auto_merge=false when the user explicitly wants to review PRs manually.
 - "wake_persona" — only when the user explicitly says "wake X now" or "have Maya do this immediately". Skips the OPEN column and goes straight to working. Avoid by default; let tasks flow through the board.
 
 Lower-level tools (escape hatches — only use if no persona fits, or for the legacy fleet):
@@ -36,7 +38,7 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
   "reply": "your message to the user",
   "actions": [
     {"tool": "create_task", "input": {"title": "...", "description": "...", "persona_id": "maya", "required_skills": ["research"], "priority": 0}},
-    {"tool": "create_plan", "input": {"title": "...", "description": "...", "execution_mode": "sequential", "auto_merge": true, "subtasks": [{"title": "step 1", "description": "...", "persona_id": "maya"}, {"title": "step 2", "description": "...", "persona_id": "theo"}]}},
+    {"tool": "create_plan", "input": {"title": "...", "description": "...", "execution_mode": "sequential", "auto_merge": true, "continuation_goal": "(original user goal, verbatim)", "subtasks": [{"title": "step 1", "description": "...", "persona_id": "maya"}, {"title": "step 2", "description": "...", "persona_id": "theo"}]}},
     {"tool": "wake_persona", "input": {"persona_id": "iris", "task": "..."}},
     {"tool": "spawn_agent", "input": {"task": "...", "type": "claude", "name": "short-name", "model": "sonnet", "repo": "/path/to/repo"}},
     {"tool": "resume_agent", "input": {"id": "agent-id-or-8char-prefix", "task": "new task description"}},
@@ -434,6 +436,7 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         description?: string;
         execution_mode?: 'parallel' | 'sequential';
         auto_merge?: boolean;
+        continuation_goal?: string;
         subtasks: Array<{
           title: string;
           description?: string;
@@ -477,6 +480,9 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         project_id: project.id,
         execution_mode: inp.execution_mode === 'sequential' ? 'sequential' : 'parallel',
         auto_merge: !!inp.auto_merge,
+        // Persist the user's goal so the autonomous loop can re-invoke this
+        // orchestrator with the plan's results when it finishes.
+        continuation_goal: inp.continuation_goal ?? null,
       });
       // Subtasks land as 'staged' so they don't litter the board until the
       // plan is explicitly started.
