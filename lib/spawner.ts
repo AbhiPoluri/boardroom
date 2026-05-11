@@ -751,6 +751,17 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     processes.set(agentId, ptyProc as unknown as ChildProcess);
     ptyProcesses.set(agentId, ptyProc);
 
+    // Hermes-only: kick off the session-file progress watcher right after
+    // spawn. The watcher polls ~/.hermes/sessions/ for the new session JSON
+    // and surfaces each new message (reasoning / tool call / result) as a
+    // PTY chunk — fixes the "blackbox until [DONE]" UX of hermes -z.
+    if (type === 'hermes') {
+      try {
+        const { startHermesProgressWatcher } = require('./hermes-progress') as typeof import('./hermes-progress');
+        startHermesProgressWatcher(agentId);
+      } catch { /* best-effort */ }
+    }
+
     // Auto-accept the workspace trust prompt by sending Enter after a short delay
     // The trust prompt shows "Yes, I trust this folder" selected by default — Enter confirms it
     setTimeout(() => {
@@ -887,6 +898,15 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       ptyProcesses.delete(agentId);
       chunkCounts.delete(agentId);
       if (idleTimer) clearTimeout(idleTimer);
+
+      // Hermes-only: drain + stop the session-file progress watcher so its
+      // final messages land on the PTY stream before we mark the agent done.
+      if (type === 'hermes') {
+        try {
+          const { stopHermesProgressWatcher } = require('./hermes-progress') as typeof import('./hermes-progress');
+          stopHermesProgressWatcher(agentId);
+        } catch { /* best-effort */ }
+      }
 
       // Flush remaining line buffer
       if (lineBuffer.trim() && !isTuiChrome(lineBuffer.trim())) {
