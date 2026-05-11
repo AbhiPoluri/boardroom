@@ -162,9 +162,16 @@
   font: 500 13px var(--font-body);
   color: var(--fg);
   letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.brr-os-persona-name > span:first-child {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .brr-os-persona-role {
   font: 400 11px var(--font-mono);

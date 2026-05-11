@@ -11,7 +11,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { useProjects } from '@/lib/use-projects';
 import {
   FileText, Workflow, Home, Sparkles, SquareCode, Plus, Search, Wrench,
-  LayoutDashboard, Bell, Users, ListTodo, Inbox, GitPullRequest, BookOpen,
+  LayoutDashboard, Bell, Users, ListTodo, GitPullRequest, BookOpen,
 } from 'lucide-react';
 
 function RingMark({ size = 14 }: { size?: number }) {
@@ -74,7 +74,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [dockExpanded, setDockExpanded] = useState(false);
   const [prCount, setPrCount] = useState(0);
   const [latestPendingPrId, setLatestPendingPrId] = useState<string | null>(null);
-  const [questionCount, setQuestionCount] = useState(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [cmdSearch, setCmdSearch] = useState('');
   const [cmdSelected, setCmdSelected] = useState(0);
@@ -96,10 +95,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           setPrCount(list.length);
           setLatestPendingPrId(list[0]?.id ?? null);
         })
-        .catch(() => {});
-      fetch('/api/pending-questions?count=1')
-        .then(r => r.json())
-        .then(d => setQuestionCount(d.count || 0))
         .catch(() => {});
     };
     fetchCount();
@@ -239,14 +234,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </div>
           <div className="brr-nav-right">
-            <Link
-              href="/"
-              className="brr-nav-item"
-              title={questionCount > 0 ? `${questionCount} pending question${questionCount === 1 ? '' : 's'}` : 'inbox'}
-            >
-              <Inbox className="w-3 h-3" strokeWidth={1.75} />
-              {questionCount > 0 && <span className="brr-pr-dot">{questionCount}</span>}
-            </Link>
             <Link
               href={prCount > 0 && latestPendingPrId ? `/review?id=${latestPendingPrId}` : '/review'}
               className="brr-nav-item"

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Play, Square, Sparkles, ExternalLink } from 'lucide-react';
 import type { Persona } from '@/lib/db';
+import { RuntimeBadge } from '@/components/RuntimeBadge';
 
 interface PersonaCardProps {
   persona: Persona;
@@ -54,7 +55,10 @@ export function PersonaCard({ persona, onWake, onSleep, onSelect, selected, comp
           {(persona.name || '?').slice(0, 1).toUpperCase()}
         </div>
         <div className="brr-os-persona-meta">
-          <div className="brr-os-persona-name">{persona.name}</div>
+          <div className="brr-os-persona-name">
+            <span>{persona.name}</span>
+            <RuntimeBadge agentType={persona.agent_type} />
+          </div>
           {persona.role && <div className="brr-os-persona-role">{persona.role}</div>}
         </div>
         <div className="brr-os-persona-status">

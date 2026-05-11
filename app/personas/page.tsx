@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Plus, Trash2, Save, Sparkles } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import type { Persona } from '@/lib/db';
+import { RuntimeBadge } from '@/components/RuntimeBadge';
 
 interface PersonaForm {
   id?: string;
@@ -173,8 +174,11 @@ export default function PersonasPage() {
               >
                 {p.name.slice(0, 1).toUpperCase()}
               </span>
-              <span style={{ flex: 1, textAlign: 'left' }}>
-                <span style={{ display: 'block', fontSize: 13, color: 'var(--fg)' }}>{p.name}</span>
+              <span style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--fg)' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <RuntimeBadge agentType={(p as Persona & { agent_type?: string }).agent_type} />
+                </span>
                 {p.role && <span style={{ display: 'block', fontSize: 10, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>{p.role}</span>}
               </span>
               {p.autonomy === 'auto' && <Sparkles className="w-3 h-3" style={{ color: 'var(--accent)' }} strokeWidth={1.5} />}

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Send, Play, Square, Settings2, Sparkles, ChevronDown, ChevronUp, Copy, RotateCcw } from 'lucide-react';
 import { PtyTerminal } from '@/components/PtyTerminal';
+import { RuntimeBadge } from '@/components/RuntimeBadge';
 import { toast } from '@/lib/toast';
 import type { Persona } from '@/lib/db';
 
@@ -145,7 +146,10 @@ export default function PersonaDetailPage() {
           {persona.name.slice(0, 1).toUpperCase()}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="brr-os-persona-detail-name">{persona.name}</div>
+          <div className="brr-os-persona-detail-name" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{persona.name}</span>
+            <RuntimeBadge agentType={persona.agent_type} />
+          </div>
           {persona.role && <div className="brr-os-persona-detail-role">{persona.role}</div>}
         </div>
 
