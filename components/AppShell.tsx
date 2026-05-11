@@ -1,84 +1,108 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChatBox } from '@/components/ChatBox';
-import { PtyTerminal } from '@/components/PtyTerminal';
+import { FloatingChatDock } from '@/components/FloatingChatDock';
+import { ProjectSwitcher } from '@/components/ProjectSwitcher';
 import { ToastContainer } from '@/components/Toast';
 import { toast } from '@/lib/toast';
 import { useTheme } from '@/components/ThemeProvider';
+import { useProjects } from '@/lib/use-projects';
 import {
-  Terminal, PanelLeftClose, FileText,
-  Workflow, Home,
-  GripHorizontal, SquareCode, Plus, Search, Wrench,
-  LayoutDashboard, Keyboard, Palette,
+  FileText, Workflow, Home, Sparkles, SquareCode, Plus, Search, Wrench,
+  LayoutDashboard, Bell, Users, ListTodo, Inbox, GitPullRequest,
 } from 'lucide-react';
 
+function RingMark({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+// Agentic-OS nav: home · personas · planning · workflows · review · marketplace · settings.
+// Older surfaces (fleet, dashboard, library, workspace) still exist at their
+// old routes; reach them via cmd-k.
 const NAV_ITEMS = [
-  { href: '/workspace', icon: SquareCode, label: 'workspace' },
-  { href: '/', icon: Home, label: 'fleet' },
-  { href: '/dashboard', icon: LayoutDashboard, label: 'dashboard' },
-  { href: '/workflows', icon: Workflow, label: 'pipelines' },
-  { href: '/configs', icon: FileText, label: 'library' },
+  { href: '/', icon: Home, label: 'os' },
+  { href: '/personas', icon: Users, label: 'personas' },
+  { href: '/planning', icon: Sparkles, label: 'planning' },
+  { href: '/workflows', icon: Workflow, label: 'workflows' },
+  { href: '/review', icon: GitPullRequest, label: 'review' },
+  { href: '/marketplace', icon: FileText, label: 'marketplace' },
   { href: '/settings', icon: Wrench, label: 'settings' },
+];
+
+const SECONDARY_NAV = [
+  { href: '/fleet', icon: LayoutDashboard, label: 'fleet' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'dashboard' },
+  { href: '/workspace', icon: SquareCode, label: 'workspace' },
+  { href: '/configs', icon: FileText, label: 'library' },
 ];
 
 const QUICK_ACTIONS = [
   { label: 'spawn with persona', hint: 'new', href: '/configs?new=1', icon: Plus },
-  { label: 'new workflow', hint: 'new', href: '/workflows?new=1', icon: Plus },
+  { label: 'new pipeline', hint: 'new', href: '/workflows?new=1', icon: Plus },
   { label: 'new cron job', hint: 'new', href: '/cron?new=1', icon: Plus },
 ];
 
+function isActive(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/' || pathname.startsWith('/os');
+  if (href === '/personas') return pathname.startsWith('/personas');
+  if (href === '/workflows') return pathname.startsWith('/workflows') || pathname.startsWith('/cron');
+  if (href === '/marketplace') return (
+    pathname.startsWith('/marketplace') || pathname.startsWith('/skills') || pathname.startsWith('/configs')
+  );
+  if (href === '/settings') return (
+    pathname.startsWith('/settings') || pathname.startsWith('/setup') || pathname.startsWith('/api-docs') || pathname.startsWith('/branches')
+  );
+  return pathname.startsWith(href);
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [chatOpen, setChatOpen] = useState(true);
-  const [termOpen, setTermOpen] = useState(false);
-  const [termHeight, setTermHeight] = useState(280); // px
+  const [dockExpanded, setDockExpanded] = useState(false);
   const [prCount, setPrCount] = useState(0);
+  const [latestPendingPrId, setLatestPendingPrId] = useState<string | null>(null);
+  const [questionCount, setQuestionCount] = useState(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [cmdSearch, setCmdSearch] = useState('');
   const [cmdSelected, setCmdSelected] = useState(0);
-  // theme dropdown removed — now cycles on click
   const cmdInputRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme, cycleThemes, getThemeLabel, getThemeAccent } = useTheme();
-  const dragging = useRef(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const prevPathname = useRef<string | null>(null);
-
-  const onDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current || !panelRef.current) return;
-      const rect = panelRef.current.getBoundingClientRect();
-      const y = ev.clientY - rect.top - 36; // offset for header
-      setTermHeight(Math.max(100, Math.min(y, rect.height - 200)));
-    };
-    const onUp = () => {
-      dragging.current = false;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, []);
-
-  // Play whoosh on navigation (pathname changes)
-  useEffect(() => {
-    prevPathname.current = pathname;
-  }, [pathname]);
+  const { active: activeProject, projects, setActive: setActiveProject, refresh: refreshProjects } = useProjects();
 
   useEffect(() => {
     const fetchCount = () => {
-      fetch('/api/push-requests?count=1')
+      // One call returns both the count (via length) and the latest id we
+      // need for the bell deep-link, so we fetch the list directly instead
+      // of doing a separate ?count=1 round trip.
+      fetch('/api/push-requests?status=pending')
         .then(r => r.json())
-        .then(d => setPrCount(d.count || 0))
+        .then(d => {
+          const list = d.requests || [];
+          setPrCount(list.length);
+          setLatestPendingPrId(list[0]?.id ?? null);
+        })
+        .catch(() => {});
+      fetch('/api/pending-questions?count=1')
+        .then(r => r.json())
+        .then(d => setQuestionCount(d.count || 0))
         .catch(() => {});
     };
     fetchCount();
-    const iv = setInterval(fetchCount, 15000);
+    const iv = setInterval(fetchCount, 8000);
     return () => clearInterval(iv);
   }, []);
 
@@ -88,11 +112,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       if (mod && e.key === '/') {
         e.preventDefault();
-        setChatOpen(true);
+        setDockExpanded(true);
         setTimeout(() => {
           const chatInput = document.querySelector('textarea[placeholder*="orchestrator"]') as HTMLTextAreaElement;
           chatInput?.focus();
-        }, 100);
+        }, 120);
       }
 
       if (mod && !e.shiftKey && e.key === 'k') {
@@ -107,14 +131,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         });
       }
 
-      // Cmd/Ctrl+Shift+N — open spawn modal
       if (mod && e.shiftKey && e.key === 'N') {
         e.preventDefault();
-        // Dispatch a custom event that page.tsx can listen to
         window.dispatchEvent(new CustomEvent('boardroom:spawn'));
       }
 
-      // Cmd/Ctrl+Shift+K — kill all running agents
       if (mod && e.shiftKey && e.key === 'K') {
         e.preventDefault();
         fetch('/api/agents')
@@ -123,42 +144,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             const running = (data.agents || []).filter(
               (a: { status: string }) => a.status === 'running' || a.status === 'spawning'
             );
-            if (running.length === 0) {
-              toast.info('no running agents to kill');
-              return;
-            }
+            if (running.length === 0) { toast.info('no running agents to kill'); return; }
             Promise.all(
               running.map((a: { id: string }) => fetch(`/api/agents/${a.id}`, { method: 'DELETE' }))
             ).then(() => {
               toast.success(`killed ${running.length} agent${running.length !== 1 ? 's' : ''}`);
-            }).catch(() => {
-              toast.error('failed to kill some agents');
-            });
+            }).catch(() => toast.error('failed to kill some agents'));
           })
           .catch(() => toast.error('failed to fetch agents'));
       }
 
-      // Cmd+Shift+D — navigate to /dashboard
-      if (mod && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        router.push('/dashboard');
-      }
-
-      // Cmd+Shift+W — navigate to /workspace
-      if (mod && e.shiftKey && e.key === 'W') {
-        e.preventDefault();
-        router.push('/workspace');
-      }
-
-      // Cmd+Shift+F — navigate to / (fleet)
-      if (mod && e.shiftKey && e.key === 'F') {
-        e.preventDefault();
-        router.push('/');
-      }
-
-      if (e.key === 'Escape') {
-        setCmdPaletteOpen(false);
-      }
+      if (mod && e.shiftKey && e.key === 'D') { e.preventDefault(); router.push('/dashboard'); }
+      if (mod && e.shiftKey && e.key === 'W') { e.preventDefault(); router.push('/workspace'); }
+      if (mod && e.shiftKey && e.key === 'F') { e.preventDefault(); router.push('/fleet'); }
+      if (mod && e.shiftKey && e.key === 'O') { e.preventDefault(); router.push('/'); }
+      if (mod && e.shiftKey && e.key === 'P') { e.preventDefault(); router.push('/personas'); }
+      if (e.key === 'Escape') setCmdPaletteOpen(false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -166,6 +167,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const allItems = [
     ...NAV_ITEMS.map(item => ({ ...item, hint: 'go', isNav: true })),
+    ...SECONDARY_NAV.map(item => ({ ...item, hint: 'go', isNav: true })),
     ...QUICK_ACTIONS.map(item => ({ ...item, isNav: false })),
   ];
   const filteredItems = cmdSearch.trim()
@@ -194,169 +196,117 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="noise-bg h-screen flex overflow-hidden bg-[var(--br-bg-primary)]">
-      {/* Left: persistent orchestrator chat (collapsible) — hidden on workspace (has its own), hidden on mobile */}
-      {pathname === '/workspace' ? null : chatOpen ? (
-        <div ref={panelRef} className="hidden md:flex w-[420px] flex-shrink-0 border-r border-[var(--br-border)] h-full flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--br-border)] flex-shrink-0">
-            <div className="flex items-center gap-2 text-xs font-mono text-[var(--br-text-secondary)]">
-              <Terminal className="w-3.5 h-3.5" />
-              ORCHESTRATOR
-              {prCount > 0 && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[9px] font-mono">
-                  {prCount} PR{prCount !== 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setTermOpen(!termOpen)}
-                className={`p-1 rounded transition-colors ${termOpen ? 'text-[var(--br-accent)] bg-[var(--br-accent)]/10' : 'text-[var(--br-text-muted)] hover:text-[var(--br-text-secondary)]'}`}
-                title={termOpen ? 'Hide terminal' : 'Show terminal'}
+    <div className="brr-app">
+      <main className="brr-main">
+        {/* Top nav — wordmark + mono items + right cluster */}
+        <nav className="brr-nav">
+          <div className="brr-nav-left">
+            <span className="brr-wordmark">
+              <span
+                className="brr-wordmark-mark"
+                style={{
+                  background: 'transparent',
+                  color: 'var(--accent)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                <Terminal className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setChatOpen(false)} className="text-[var(--br-text-muted)] hover:text-[var(--br-text-secondary)] transition-colors" title="Collapse panel">
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Terminal (top, optional) */}
-          {termOpen && (
-            <>
-              <div className="flex-shrink-0 overflow-hidden" style={{ height: termHeight }}>
-                <PtyTerminal agentId="__orchestrator__" isActive={true} fontSize={11} />
-              </div>
-              <div
-                onMouseDown={onDragStart}
-                className="flex-shrink-0 h-2 border-y border-[var(--br-border)] bg-[var(--br-bg-secondary)]/50 cursor-row-resize flex items-center justify-center hover:bg-[var(--br-bg-hover)] transition-colors group"
-              >
-                <GripHorizontal className="w-4 h-3 text-[var(--br-text-muted)] group-hover:text-[var(--br-text-secondary)]" />
-              </div>
-            </>
-          )}
-
-          {/* Chat (bottom) */}
-          <ChatBox />
-        </div>
-      ) : pathname === '/workspace' ? null : (
-        <button
-          onClick={() => setChatOpen(true)}
-          className="hidden md:flex w-10 flex-shrink-0 border-r border-[var(--br-border)] flex-col items-center justify-center gap-2 hover:bg-[var(--br-bg-secondary)] transition-colors group"
-          title="Open chat"
-        >
-          <Terminal className="w-4 h-4 text-[var(--br-text-muted)] group-hover:text-[var(--br-text-secondary)]" />
-          {prCount > 0 && (
-            <span className="w-4 h-4 rounded-full bg-amber-500 text-[8px] font-mono text-black font-bold flex items-center justify-center">
-              {prCount}
+                <RingMark size={14} />
+              </span>
+              <span>boardroom</span>
             </span>
-          )}
-          <span
-            className="text-[10px] font-mono text-[var(--br-text-muted)] group-hover:text-[var(--br-text-secondary)]"
-            style={{ writingMode: 'vertical-rl' as const }}
-          >
-            orchestrator
-          </span>
-        </button>
-      )}
-
-      {/* Right: nav + page content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Persistent nav bar */}
-        <nav className="flex-shrink-0 flex items-center justify-between border-b border-[var(--br-border)] bg-[var(--br-bg-primary)]/80 backdrop-blur-sm overflow-x-auto">
-          <div className="flex items-center gap-1 px-4 py-2 flex-shrink-0">
-            <span className="font-mono text-xs font-bold text-[var(--br-text-secondary)] mr-3 tracking-tight">boardroom</span>
+            <ProjectSwitcher
+              active={activeProject}
+              projects={projects}
+              onActiveChange={(id) => { void setActiveProject(id); }}
+              onProjectsChange={() => { void refreshProjects(); }}
+            />
             {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-              const active = href === '/'
-                ? pathname === '/' || pathname.startsWith('/logs')
-                : href === '/workflows'
-                ? pathname.startsWith('/workflows') || pathname.startsWith('/cron')
-                : href === '/configs'
-                ? pathname.startsWith('/configs') || pathname.startsWith('/skills') || pathname.startsWith('/marketplace')
-                : href === '/settings'
-                ? pathname.startsWith('/settings') || pathname.startsWith('/setup') || pathname.startsWith('/api-docs') || pathname.startsWith('/branches')
-                : pathname.startsWith(href);
+              const active = isActive(pathname, href);
               return (
                 <Link
                   key={href}
                   href={href}
                   aria-label={label}
-                  className={`text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-all duration-200 hover:scale-[1.02] flex-shrink-0 ${
-                    active
-                      ? 'bg-[var(--br-bg-hover)] text-[var(--br-text-primary)] shadow-[0_0_12px_rgba(52,211,153,0.15)]'
-                      : 'text-[var(--br-text-muted)] hover:text-[var(--br-text-secondary)] hover:bg-[var(--br-bg-secondary)]'
-                  }`}
+                  className={`brr-nav-item ${active ? 'is-active' : ''}`}
                 >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline">{label}</span>
+                  <Icon className="w-3 h-3" strokeWidth={1.75} />
+                  <span>{label}</span>
                 </Link>
               );
             })}
           </div>
-          <div className="flex items-center flex-shrink-0">
-            {/* Theme toggle — cycles through themes on click */}
+          <div className="brr-nav-right">
+            <Link
+              href="/"
+              className="brr-nav-item"
+              title={questionCount > 0 ? `${questionCount} pending question${questionCount === 1 ? '' : 's'}` : 'inbox'}
+            >
+              <Inbox className="w-3 h-3" strokeWidth={1.75} />
+              {questionCount > 0 && <span className="brr-pr-dot">{questionCount}</span>}
+            </Link>
+            <Link
+              href={prCount > 0 && latestPendingPrId ? `/review?id=${latestPendingPrId}` : '/review'}
+              className="brr-nav-item"
+              title={prCount > 0 ? `${prCount} pending push request${prCount === 1 ? '' : 's'} — open most recent` : 'review queue'}
+            >
+              <Bell className="w-3 h-3" strokeWidth={1.75} />
+              {prCount > 0 && <span className="brr-pr-dot">{prCount}</span>}
+            </Link>
             <button
+              className="brr-nav-item"
+              type="button"
+              title={`Theme: ${getThemeLabel(theme)} (click to cycle)`}
               onClick={() => {
-                const list = cycleThemes.length > 0 ? cycleThemes : ['dark'];
+                const list = cycleThemes.length > 0 ? cycleThemes : ['claude', 'dark'];
                 const idx = list.indexOf(theme);
                 const next = list[(idx + 1) % list.length];
                 setTheme(next);
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-[var(--br-text-muted)] hover:text-[var(--br-text-secondary)] hover:bg-[var(--br-bg-secondary)] transition-colors text-[11px] font-mono"
-              title={`Theme: ${getThemeLabel(theme)} (click to cycle)`}
             >
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: getThemeAccent(theme) }} />
-              <span className="hidden md:inline">{getThemeLabel(theme)}</span>
+              <span
+                className="brr-theme-dot"
+                style={{ background: getThemeAccent(theme) }}
+              />
+              <span>{getThemeLabel(theme).toLowerCase()}</span>
             </button>
             <button
               onClick={() => { setCmdSearch(''); setCmdSelected(0); setCmdPaletteOpen(true); setTimeout(() => cmdInputRef.current?.focus(), 30); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-[var(--br-text-muted)] hover:text-[var(--br-text-secondary)] hover:bg-[var(--br-bg-secondary)] transition-colors text-[11px] font-mono"
+              className="brr-nav-item"
               title="Command palette (⌘K)"
+              type="button"
             >
-              <Search className="w-3 h-3" />
-              <span className="hidden md:inline">⌘K</span>
+              <Search className="w-3 h-3" strokeWidth={1.75} />
+              <span>⌘K</span>
             </button>
           </div>
         </nav>
 
         {/* Page content */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden animate-fade-in">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {children}
         </div>
-      </div>
+      </main>
 
-      {/* Command palette modal */}
+      {/* ⌘K palette */}
       {cmdPaletteOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center pt-24"
-          onClick={() => setCmdPaletteOpen(false)}
-        >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          {/* Palette */}
-          <div
-            className="relative w-full max-w-md bg-[var(--br-bg-card)]/90 backdrop-blur-xl border border-[var(--br-border)] rounded-xl shadow-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Search input */}
-            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--br-border)]">
-              <Search className="w-3.5 h-3.5 text-[var(--br-text-muted)] flex-shrink-0" />
+        <div className="brr-cmdk-backdrop" onClick={() => setCmdPaletteOpen(false)}>
+          <div className="brr-cmdk" onClick={e => e.stopPropagation()}>
+            <div className="brr-cmdk-input-row">
+              <Search className="w-3 h-3" style={{ color: 'var(--fg-muted)' }} strokeWidth={1.75} />
               <input
                 ref={cmdInputRef}
                 value={cmdSearch}
                 onChange={e => { setCmdSearch(e.target.value); setCmdSelected(0); }}
                 onKeyDown={handleCmdKeyDown}
-                placeholder="navigate or search..."
-                className="flex-1 bg-transparent outline-none font-mono text-sm text-[var(--br-text-primary)] placeholder:text-[var(--br-text-muted)]"
+                placeholder="navigate or search…"
               />
-              <span className="text-[10px] font-mono text-[var(--br-text-muted)] flex-shrink-0">esc</span>
+              <span style={{ font: '500 9px var(--font-mono)', color: 'var(--fg-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>esc</span>
             </div>
-            {/* Items */}
-            <div className="max-h-80 overflow-y-auto py-1">
+            <div className="brr-cmdk-list">
               {filteredItems.length === 0 ? (
-                <div className="px-4 py-3 text-[11px] font-mono text-[var(--br-text-muted)]">no results</div>
+                <div style={{ padding: '14px', color: 'var(--fg-muted)', fontSize: 11 }}>no results</div>
               ) : filteredItems.map((item, i) => {
                 const Icon = item.icon;
                 return (
@@ -364,52 +314,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     key={item.href + item.label}
                     onClick={() => handleCmdSelect(item.href)}
                     onMouseEnter={() => setCmdSelected(i)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-                      i === cmdSelected ? 'bg-[var(--br-accent)]/10 text-[var(--br-accent)]' : 'text-[var(--br-text-secondary)] hover:text-[var(--br-text-primary)]'
-                    }`}
+                    className={`brr-cmdk-item ${i === cmdSelected ? 'is-on' : ''}`}
+                    type="button"
                   >
-                    <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="font-mono text-[12px] flex-1">{item.label}</span>
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
-                      i === cmdSelected ? 'bg-[var(--br-accent)]/20 text-[var(--br-accent)]' : 'bg-[var(--br-bg-hover)] text-[var(--br-text-muted)]'
-                    }`}>
-                      {item.hint}
-                    </span>
+                    <Icon className="w-3 h-3" strokeWidth={1.75} />
+                    <span>{item.label}</span>
+                    <span className="brr-cmdk-item-hint">{item.hint}</span>
                   </button>
                 );
               })}
             </div>
-
-            {/* Keyboard shortcuts section */}
             {!cmdSearch.trim() && (
-              <div className="border-t border-[var(--br-border)] px-3 py-2">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Keyboard className="w-3 h-3 text-[var(--br-text-muted)]" />
-                  <span className="text-[9px] font-mono text-[var(--br-text-muted)] uppercase tracking-wider">shortcuts</span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                  {[
-                    ['⌘⇧N', 'spawn agent'],
-                    ['⌘⇧K', 'kill all agents'],
-                    ['⌘⇧F', 'fleet'],
-                    ['⌘⇧W', 'workspace'],
-                    ['⌘⇧D', 'dashboard'],
-                    ['⌘K', 'command palette'],
-                    ['⌘/', 'orchestrator chat'],
-                  ].map(([key, label]) => (
-                    <div key={key} className="flex items-center gap-2 py-0.5">
-                      <span className="text-[9px] font-mono text-[var(--br-text-secondary)] bg-[var(--br-bg-hover)] px-1.5 py-0.5 rounded flex-shrink-0">{key}</span>
-                      <span className="text-[10px] font-mono text-[var(--br-text-muted)]">{label}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="brr-cmdk-shortcuts">
+                <span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd> spawn agent</span>
+                <span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>K</kbd> kill all</span>
+                <span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> fleet</span>
+                <span><kbd>⌘</kbd><kbd>⇧</kbd><kbd>W</kbd> workspace</span>
+                <span><kbd>⌘</kbd><kbd>/</kbd> orchestrator</span>
+                <span><kbd>⌘</kbd><kbd>K</kbd> palette</span>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Toast notifications */}
+      {/* Floating orchestrator chat — hidden on surfaces that have their own composer */}
+      {pathname !== '/workspace'
+        && !pathname.startsWith('/personas/')
+        && pathname !== '/planning'
+        && pathname !== '/workflows'
+        && (
+        <FloatingChatDock
+          expanded={dockExpanded}
+          onExpandedChange={setDockExpanded}
+          prCount={prCount}
+        />
+      )}
+
       <ToastContainer />
     </div>
   );

@@ -514,14 +514,38 @@ export default function ConfigsPage() {
         className="hidden"
       />
 
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
-        <div className="flex items-center gap-3">
-          <SubNav tabs={[{ label: 'personas', href: '/configs', active: true }, { label: 'skills', href: '/skills', active: false }, { label: 'marketplace', href: '/marketplace', active: false }]} />
-          <h1 className="font-mono text-sm text-zinc-100">personas</h1>
-          <span className="text-[10px] font-mono text-zinc-600">agents/*.md</span>
+      {/* Editorial header */}
+      <div
+        className="flex-shrink-0 flex items-end justify-between gap-6"
+        style={{ padding: '36px 36px 20px', borderBottom: '1px solid var(--border-faint)', background: 'var(--bg)' }}
+      >
+        <div className="flex flex-col gap-2 min-w-0">
+          <span className="brr-eyebrow">install · share</span>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: 36,
+              lineHeight: 1.1,
+              letterSpacing: '-0.014em',
+              color: 'var(--fg)',
+            }}
+          >
+            skills, <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>mcps &amp; personas.</em>
+          </h1>
+          <p
+            style={{
+              margin: '4px 0 0',
+              font: '400 13px/1.55 var(--font-mono)',
+              color: 'var(--fg-secondary)',
+              maxWidth: '64ch',
+            }}
+          >
+            reusable agent capabilities. install one and any agent can pick it up next spawn.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}

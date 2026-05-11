@@ -16,6 +16,9 @@ const streamColors: Record<LogStream, string> = {
   stdout: 'text-zinc-100',
   stderr: 'text-red-400',
   system: 'text-amber-400',
+  agent_text: 'text-zinc-100',
+  tool_use: 'text-blue-300',
+  tool_result: 'text-emerald-300',
 };
 
 function formatTimestamp(ts: number): string {

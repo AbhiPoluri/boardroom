@@ -788,19 +788,43 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950 text-zinc-100">
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/40">
-        <div className="flex items-center gap-3">
-          <SubNav tabs={[{ label: 'overview', href: '/dashboard', active: true }, { label: 'costs', href: '/costs', active: false }]} />
-          <h1 className="font-mono text-sm text-zinc-100">dashboard</h1>
+    <div className="flex-1 flex flex-col overflow-y-auto" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
+      <header
+        className="flex-shrink-0 flex items-end justify-between gap-6"
+        style={{ padding: '36px 36px 20px', borderBottom: '1px solid var(--border-faint)' }}
+      >
+        <div className="flex flex-col gap-2 min-w-0">
+          <span className="brr-eyebrow">overview</span>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: 36,
+              lineHeight: 1.1,
+              letterSpacing: '-0.014em',
+              color: 'var(--fg)',
+            }}
+          >
+            fleet <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>at a glance.</em>
+          </h1>
+          <p
+            style={{
+              margin: '4px 0 0',
+              font: '400 13px/1.55 var(--font-mono)',
+              color: 'var(--fg-secondary)',
+              maxWidth: '64ch',
+            }}
+          >
+            cost, throughput, and queue depth across every project. drill in to see per-agent breakdowns.
+          </p>
         </div>
         <button
+          type="button"
           onClick={() => setSettingsOpen(s => !s)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-mono transition-colors ${
-            settingsOpen ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
-          }`}
+          className={`brr-btn ${settingsOpen ? '' : 'brr-btn--ghost'}`}
         >
-          <Settings className="w-3.5 h-3.5" />
+          <Settings className="w-3 h-3" strokeWidth={1.75} />
           widgets
         </button>
       </header>

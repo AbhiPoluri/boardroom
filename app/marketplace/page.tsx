@@ -2,7 +2,26 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SubNav } from '@/components/SubNav';
-import { Search, Server, ExternalLink, Download, Package, RefreshCw, ChevronRight, Check, Star, BookOpen, GitBranch, Cpu, Shield, Brain, Wrench, Code } from 'lucide-react';
+import { Search, Server, ExternalLink, Download, Package, RefreshCw, ChevronRight, Check, Star, BookOpen, GitBranch, Cpu, Shield, Brain, Wrench, Code, Users } from 'lucide-react';
+
+interface PersonaPackSummary {
+  slug: string;
+  name: string;
+  tagline: string;
+  description: string;
+  accent: string;
+  personas: Array<{
+    slug: string;
+    name: string;
+    role: string;
+    color: string;
+    skills: string[];
+    installed: boolean;
+  }>;
+  installedCount: number;
+  total: number;
+  is_default?: boolean;
+}
 
 interface McpServer {
   name: string;
@@ -380,7 +399,9 @@ export default function MarketplacePage() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
 
-  const [activeSection, setActiveSection] = useState<'all' | 'skills' | 'personas' | 'mcp-curated' | 'mcp' | 'repos'>('all');
+  const [activeSection, setActiveSection] = useState<'all' | 'packs' | 'skills' | 'personas' | 'mcp-curated' | 'mcp' | 'repos'>('all');
+  const [packs, setPacks] = useState<PersonaPackSummary[]>([]);
+  const [installingPack, setInstallingPack] = useState<string | null>(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [previewItem, setPreviewItem] = useState<{ type: string; name: string; description: string; prompt?: string; url?: string; installCmd?: string; tags?: string[]; category?: string; stars?: string } | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
@@ -427,6 +448,34 @@ export default function MarketplacePage() {
       })
       .catch(() => {});
   }, []);
+
+  // Fetch persona packs
+  const fetchPacks = useCallback(() => {
+    fetch('/api/marketplace/packs')
+      .then(r => r.json())
+      .then(d => setPacks(d.packs || []))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { fetchPacks(); }, [fetchPacks]);
+
+  const handleInstallPack = async (slug: string) => {
+    setInstallingPack(slug);
+    try {
+      const r = await fetch(`/api/marketplace/packs/${slug}/install`, { method: 'POST' });
+      if (!r.ok) return;
+      fetchPacks();
+    } finally {
+      setInstallingPack(null);
+    }
+  };
+
+  const handleUnpinDefault = async (slug: string) => {
+    try {
+      const r = await fetch(`/api/marketplace/packs/${slug}/install`, { method: 'DELETE' });
+      if (!r.ok) return;
+      fetchPacks();
+    } catch { /* ignore */ }
+  };
 
   const handleMcpSearch = (q: string) => {
     setMcpSearch(q);
@@ -561,6 +610,7 @@ export default function MarketplacePage() {
         <div className="flex items-center gap-1 overflow-x-auto">
           {([
             { id: 'all' as const, label: 'all', count: OFFICIAL_SKILLS.length + COMMUNITY_PERSONAS.length + CURATED_MCP.length + CURATED_REPOS.length },
+            { id: 'packs' as const, label: 'persona packs', count: packs.length },
             { id: 'skills' as const, label: 'skills', count: filteredSkills.length },
             { id: 'personas' as const, label: 'personas', count: filteredPersonas2.length },
             { id: 'mcp-curated' as const, label: 'MCP servers', count: filteredMcpCurated.length },
@@ -661,8 +711,98 @@ export default function MarketplacePage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Featured + All tab */}
-        {(['all', 'skills', 'mcp-curated', 'repos'] as const).includes(activeSection as 'all') ? (
+        {(['all', 'packs', 'skills', 'mcp-curated', 'repos'] as const).includes(activeSection as 'all') ? (
           <div className="p-4 space-y-6">
+            {/* Persona packs section */}
+            {(activeSection === 'all' || activeSection === 'packs') && packs.length > 0 && (
+              <div className="space-y-3">
+                {activeSection === 'all' && (
+                  <h2 className="font-mono text-xs text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="w-3 h-3" /> persona packs
+                  </h2>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-3">
+                  {packs.map(pack => {
+                    const fullyInstalled = pack.installedCount === pack.total;
+                    return (
+                      <div
+                        key={pack.slug}
+                        className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex flex-col gap-3"
+                        style={{ borderLeft: `3px solid ${pack.accent}` }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-mono text-sm text-zinc-100">{pack.name}</h3>
+                              {pack.is_default && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnpinDefault(pack.slug)}
+                                  title="Pinned as default for new projects — click to unpin"
+                                  className="font-mono text-[8px] tracking-wider uppercase px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20"
+                                >
+                                  default
+                                </button>
+                              )}
+                            </div>
+                            <p className="font-mono text-[10px] text-zinc-400 mt-0.5">{pack.tagline}</p>
+                          </div>
+                          <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                            {pack.installedCount} / {pack.total} installed
+                          </span>
+                        </div>
+                        <p className="font-mono text-[11px] text-zinc-400 leading-relaxed">{pack.description}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {pack.personas.map(p => (
+                            <div
+                              key={p.slug}
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-[10px] font-mono ${
+                                p.installed
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                  : 'bg-zinc-800/40 border-zinc-700 text-zinc-300'
+                              }`}
+                              title={`${p.name} — ${p.role}\nskills: ${p.skills.join(', ')}`}
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ background: p.color }}
+                              />
+                              <span>{p.name}</span>
+                              <span className="text-zinc-500">·</span>
+                              <span className="text-zinc-500">{p.role}</span>
+                              {p.installed && <Check className="w-2.5 h-2.5" strokeWidth={2.5} />}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleInstallPack(pack.slug)}
+                            disabled={installingPack === pack.slug || fullyInstalled}
+                            className={`font-mono text-[10px] px-3 py-1.5 rounded ${
+                              fullyInstalled
+                                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 cursor-default'
+                                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700'
+                            } flex items-center gap-1.5 disabled:opacity-60`}
+                          >
+                            {fullyInstalled ? (
+                              <><Check className="w-3 h-3" strokeWidth={2} /> all installed</>
+                            ) : installingPack === pack.slug ? (
+                              <><RefreshCw className="w-3 h-3 animate-spin" strokeWidth={1.75} /> installing…</>
+                            ) : pack.installedCount > 0 ? (
+                              <><Download className="w-3 h-3" strokeWidth={1.75} /> install {pack.total - pack.installedCount} remaining</>
+                            ) : (
+                              <><Download className="w-3 h-3" strokeWidth={1.75} /> install pack</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Featured row (only on 'all' tab without search) */}
             {activeSection === 'all' && !globalSearch && (
               <div className="space-y-2">

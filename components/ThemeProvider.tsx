@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-export type BuiltinTheme = 'dark' | 'light' | 'midnight' | 'emerald';
+export type BuiltinTheme = 'dark' | 'light' | 'midnight' | 'emerald' | 'claude';
 export type Theme = BuiltinTheme | string; // string = custom theme ID
 
 export interface ThemeColors {
@@ -41,18 +41,18 @@ interface ThemeContextValue {
   isBuiltin: (id: Theme) => boolean;
 }
 
-const BUILTIN_THEMES: BuiltinTheme[] = ['dark', 'light', 'midnight', 'emerald'];
+const BUILTIN_THEMES: BuiltinTheme[] = ['dark', 'light', 'midnight', 'emerald', 'claude'];
 const STORAGE_KEY = 'boardroom:theme';
 const CUSTOM_THEMES_KEY = 'boardroom:custom-themes';
 const CYCLE_KEY = 'boardroom:cycle-themes';
-const DEFAULT_THEME: Theme = 'dark';
+const DEFAULT_THEME: Theme = 'claude';
 
 const BUILTIN_LABELS: Record<BuiltinTheme, string> = {
-  dark: 'Dark', light: 'Light', midnight: 'Midnight', emerald: 'Emerald',
+  dark: 'Dark', light: 'Light', midnight: 'Midnight', emerald: 'Emerald', claude: 'Claude',
 };
 
 const BUILTIN_ACCENTS: Record<BuiltinTheme, string> = {
-  dark: '#10b981', light: '#059669', midnight: '#6366f1', emerald: '#34d399',
+  dark: '#10b981', light: '#059669', midnight: '#6366f1', emerald: '#34d399', claude: '#E89151',
 };
 
 export const DEFAULT_COLORS: ThemeColors = {

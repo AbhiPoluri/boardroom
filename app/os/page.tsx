@@ -1,5 +1,5 @@
 import OSHome from '@/components/OSHome';
 
-export default function HomePage() {
+export default function OSPage() {
   return <OSHome />;
 }

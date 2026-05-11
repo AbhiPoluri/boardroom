@@ -108,7 +108,7 @@ function AgentCard({ agent, onKill, onDelete, onResume, tokens, allAgents = [], 
   const [resumeTask, setResumeTask] = useState('');
   const resumeInputRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
-  const isActive = agent.status === 'running' || agent.status === 'spawning';
+  const isActive = agent.status === 'running' || agent.status === 'spawning' || agent.status === 'needs_input';
   const isWorkflow = agent.name.startsWith('wf-');
   const depIds = agent.depends_on ? agent.depends_on.split(',').filter(Boolean) : [];
   const depNames = depIds.map(id => {

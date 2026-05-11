@@ -18,6 +18,10 @@ const statusConfig: Record<AgentStatus, { label: string; className: string }> = 
     label: 'idle',
     className: 'bg-zinc-400/10 text-zinc-400 border-zinc-400/20 hover:bg-zinc-400/20',
   },
+  needs_input: {
+    label: 'needs input',
+    className: 'bg-amber-400/15 text-amber-300 border-amber-400/40 hover:bg-amber-400/25',
+  },
   done: {
     label: 'done',
     className: 'bg-blue-400/10 text-blue-400 border-blue-400/20 hover:bg-blue-400/20',
@@ -39,7 +43,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       variant="outline"
       className={`font-mono text-xs ${config.className}`}
     >
-      {['running', 'spawning'].includes(status) && (
+      {['running', 'spawning', 'needs_input'].includes(status) && (
         <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
       )}
       {config.label}

@@ -484,10 +484,38 @@ export default function SettingsPage() {
           { label: 'api', href: '/api-docs', active: false },
           { label: 'branches', href: '/branches', active: false },
         ]} />
-        <SlidersHorizontal className="w-3.5 h-3.5 text-[var(--br-text-secondary)]" />
-        <h1 className="font-mono text-sm text-[var(--br-text-primary)]">settings</h1>
-        <Separator orientation="vertical" className="h-4" />
-        <span className="text-[11px] font-mono text-[var(--br-text-muted)]">runtime configuration</span>
+      </div>
+      {/* Editorial header */}
+      <div
+        className="flex-shrink-0"
+        style={{ padding: '24px 36px 20px', borderBottom: '1px solid var(--border-faint)', background: 'var(--bg)' }}
+      >
+        <div className="flex flex-col gap-2 min-w-0">
+          <span className="brr-eyebrow">configuration</span>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: 36,
+              lineHeight: 1.1,
+              letterSpacing: '-0.014em',
+              color: 'var(--fg)',
+            }}
+          >
+            settings &amp; <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>secrets.</em>
+          </h1>
+          <p
+            style={{
+              margin: '4px 0 0',
+              font: '400 13px/1.55 var(--font-mono)',
+              color: 'var(--fg-secondary)',
+              maxWidth: '64ch',
+            }}
+          >
+            api keys, default branches, agent caps, and theme.
+          </p>
+        </div>
       </div>
 
       {/* Content */}

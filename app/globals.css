@@ -2,6 +2,121 @@
 @import "@xterm/xterm/css/xterm.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./cockpit.css";
+@import "./planner.css";
+@import "./os.css";
+
+/* ─── Boardroom redesign tokens ─────────────────────────────────────────────
+   Warm editorial palette + Instrument Serif / Inter / JetBrains Mono.
+   Available globally; semantic variables (--bg, --fg, --accent, ...) and the
+   legacy --br-* aliases are remapped under html[data-theme="claude"] below.
+   Fonts are loaded via next/font/google in app/layout.tsx and exposed as
+   --font-display, --font-body, --font-mono. */
+
+:root {
+  /* Paper / cream surfaces */
+  --paper:        #FAF7F0;
+  --cream:        #F4EDD8;
+  --cream-deep:   #EFE7CF;
+
+  /* Ink — warm near-black */
+  --ink:          #1A1714;
+  --ink-raised:   #1A1714;
+  --ink-deep:     #0F0D0A;
+  --ink-deeper:   #0A0907;
+
+  /* Clay accents */
+  --clay:         #C77E50;
+  --clay-warm:    #E89151;
+  --clay-soft:    #F4A36C;
+  --clay-deep:    #A6603A;
+
+  /* Semantic state */
+  --moss:         #5C8A5C;
+  --brick:        #B5482A;
+  --amber-tone:   #D29A3F;
+  --slate-tone:   #7A8C9F;
+
+  /* Type scale — fluid, calm. Display is generous; UI is tight. */
+  --text-display-xl: 72px;   --lh-display-xl: 1.05;
+  --text-display:    56px;   --lh-display:    1.08;
+  --text-h1:         44px;   --lh-h1:         1.12;
+  --text-h2:         32px;   --lh-h2:         1.18;
+  --text-h3:         24px;   --lh-h3:         1.25;
+  --text-h4:         18px;   --lh-h4:         1.35;
+  --text-body-lg:    17px;   --lh-body-lg:    1.6;
+  --text-body:       15px;   --lh-body:       1.6;
+  --text-small:      13px;   --lh-small:      1.55;
+  --text-caption:    12px;   --lh-caption:    1.5;
+  --text-micro:      11px;   --lh-micro:      1.4;
+  --text-nano:       10px;   --lh-nano:       1.4;
+
+  /* Spacing + radii */
+  --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+  --space-12: 48px; --space-16: 64px; --space-20: 80px; --space-24: 96px;
+  --radius-xs:  3px;
+  --radius-sm:  6px;
+  --radius:     10px;
+  --radius-md:  14px;
+  --radius-lg:  20px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease-out:     cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:  cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast:     120ms;
+  --dur:          220ms;
+  --dur-slow:     400ms;
+  --dur-slower:   600ms;
+}
+
+/* Display / body / mono utility classes — usable under any theme. Pull from
+   the next/font CSS variables registered in app/layout.tsx. */
+.h-display-xl { font-family: var(--font-display); font-size: var(--text-display-xl); line-height: var(--lh-display-xl); font-weight: 400; letter-spacing: -0.02em; }
+.h-display    { font-family: var(--font-display); font-size: var(--text-display);    line-height: var(--lh-display);    font-weight: 400; letter-spacing: -0.015em; }
+.h-1          { font-family: var(--font-display); font-size: var(--text-h1);         line-height: var(--lh-h1);         font-weight: 400; letter-spacing: -0.012em; }
+.h-2          { font-family: var(--font-display); font-size: var(--text-h2);         line-height: var(--lh-h2);         font-weight: 400; letter-spacing: -0.008em; }
+.h-3          { font-family: var(--font-body);    font-size: var(--text-h3);         line-height: var(--lh-h3);         font-weight: 600; letter-spacing: -0.006em; }
+.h-4          { font-family: var(--font-body);    font-size: var(--text-h4);         line-height: var(--lh-h4);         font-weight: 600; }
+
+.body-lg      { font-family: var(--font-body);    font-size: var(--text-body-lg);    line-height: var(--lh-body-lg);    font-weight: 400; }
+.body         { font-family: var(--font-body);    font-size: var(--text-body);       line-height: var(--lh-body);       font-weight: 400; }
+.small        { font-family: var(--font-body);    font-size: var(--text-small);      line-height: var(--lh-small);      font-weight: 400; }
+.caption      { font-family: var(--font-body);    font-size: var(--text-caption);    line-height: var(--lh-caption);    font-weight: 500; }
+
+.eyebrow      { font-family: var(--font-mono);    font-size: var(--text-nano);       letter-spacing: 0.12em; text-transform: uppercase; font-weight: 500; }
+
+/* Italic-accent helper for serif headlines under the Claude theme. */
+.italic-accent { font-style: italic; color: var(--clay-warm); }
+
+/* Form input matching the cockpit aesthetic */
+.brr-input {
+  width: 100%;
+  background: var(--bg-inset, var(--bg-card));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--fg);
+  font: 400 12.5px/1.5 var(--font-mono);
+  outline: none;
+  transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.brr-input::placeholder { color: var(--fg-muted); }
+.brr-input:focus { border-color: var(--accent-line, var(--border-strong)); }
+
+/* Project switcher row "edit" affordance */
+.brr-row-edit:hover { color: var(--accent) !important; border-color: var(--accent-line) !important; }
+
+@keyframes brrAttentionPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(212,166,74,0.18); }
+  50%      { box-shadow: 0 0 0 5px rgba(212,166,74,0.28); }
+}
+
+@keyframes brrFleshPulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
 
 /* ─── Theme CSS variables ───────────────────────────────────────────────── */
 
@@ -67,6 +182,66 @@
   --br-danger: #fca5a5;
   --br-warning: #fde68a;
   --br-info: #93c5fd;
+}
+
+/* ── CLAUDE — warm editorial cockpit (Boardroom redesign) ─────────────────
+   Maps both the legacy --br-* vars (so every existing component re-themes)
+   and the forward --bg / --fg / --accent vars (used by new redesign code). */
+html[data-theme="claude"] {
+  color-scheme: dark;
+
+  /* Forward semantic tokens (new redesign code) */
+  --bg:           var(--ink-deep);
+  --bg-raised:    #15120F;
+  --bg-card:      #1B1714;
+  --bg-inset:     var(--ink-deeper);
+  --bg-hover:     #221D18;
+  --bg-overlay:   rgba(14,12,10,0.78);
+
+  --fg:           #F3ECE1;
+  --fg-secondary: #B8A98F;
+  --fg-muted:     #7A6B58;
+  --fg-faint:     #4A3F33;
+
+  --border:        #2A241E;
+  --border-faint:  #1F1A15;
+  --border-strong: #3A3026;
+
+  --accent:        var(--clay-warm);
+  --accent-hover:  var(--clay-soft);
+  --accent-soft:   rgba(232,145,81,0.12);
+  --accent-line:   rgba(232,145,81,0.32);
+  --accent-fg:     var(--ink-deep);
+
+  --state-ok:      #7BA05B;
+  --state-warn:    #D4A64A;
+  --state-error:   #D97757;
+  --state-info:    #6E93B8;
+
+  --inner-light: inset 0 1px 0 rgba(255,235,210,0.03);
+  --shadow-pop:  0 8px 28px rgba(0,0,0,0.5), 0 1px 0 rgba(255,235,210,0.04) inset;
+  --shadow-md:   0 4px 16px rgba(0,0,0,0.40);
+
+  /* Legacy aliases — every existing component reads these */
+  --br-bg-primary: var(--bg);
+  --br-bg-secondary: var(--bg-raised);
+  --br-bg-card: var(--bg-card);
+  --br-bg-hover: var(--bg-hover);
+  --br-border: var(--border);
+  --br-text-primary: var(--fg);
+  --br-text-secondary: var(--fg-secondary);
+  --br-text-muted: var(--fg-muted);
+  --br-accent: var(--accent);
+  --br-accent-hover: var(--accent-hover);
+  --br-danger: var(--state-error);
+  --br-warning: var(--state-warn);
+  --br-info: var(--state-info);
+}
+
+/* Under Claude theme, default body type is Inter and headings can opt into
+   the serif via .h-display / .h-1 / .italic-accent. Mono sticks to JetBrains. */
+html[data-theme="claude"] body {
+  font-family: var(--font-body);
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -411,6 +586,90 @@
 
 [data-theme="emerald"] ::-webkit-scrollbar-thumb { background: #0d4a2e; }
 [data-theme="emerald"] ::-webkit-scrollbar-thumb:hover { background: #116038; }
+
+/* ── CLAUDE — warm editorial overrides ──────────────────────────────────── */
+html[data-theme="claude"] .bg-black { background-color: #0E0C0A !important; }
+html[data-theme="claude"] .bg-black\/50 { background-color: #15120F !important; }
+
+html[data-theme="claude"] .bg-zinc-950,
+html[data-theme="claude"] .bg-zinc-950\/30,
+html[data-theme="claude"] .bg-zinc-950\/40,
+html[data-theme="claude"] .bg-zinc-950\/50,
+html[data-theme="claude"] .bg-zinc-950\/60,
+html[data-theme="claude"] .bg-zinc-950\/80,
+html[data-theme="claude"] .bg-zinc-950\/90 { background-color: #0E0C0A !important; }
+
+html[data-theme="claude"] .bg-zinc-900,
+html[data-theme="claude"] .bg-zinc-900\/20,
+html[data-theme="claude"] .bg-zinc-900\/30,
+html[data-theme="claude"] .bg-zinc-900\/40,
+html[data-theme="claude"] .bg-zinc-900\/50,
+html[data-theme="claude"] .bg-zinc-900\/60,
+html[data-theme="claude"] .bg-zinc-900\/90,
+html[data-theme="claude"] .bg-zinc-900\/95 { background-color: #15120F !important; }
+
+html[data-theme="claude"] .bg-zinc-800,
+html[data-theme="claude"] .bg-zinc-800\/20,
+html[data-theme="claude"] .bg-zinc-800\/30,
+html[data-theme="claude"] .bg-zinc-800\/40,
+html[data-theme="claude"] .bg-zinc-800\/50,
+html[data-theme="claude"] .bg-zinc-800\/60,
+html[data-theme="claude"] .bg-zinc-800\/80 { background-color: #221D18 !important; }
+
+html[data-theme="claude"] .bg-zinc-700 { background-color: #2A241E !important; }
+html[data-theme="claude"] .bg-zinc-600 { background-color: #3A3026 !important; }
+html[data-theme="claude"] .bg-zinc-500 { background-color: #5A4A38 !important; }
+html[data-theme="claude"] .bg-zinc-500\/10 { background-color: rgb(90 74 56 / 0.1) !important; }
+html[data-theme="claude"] .bg-zinc-500\/20 { background-color: rgb(90 74 56 / 0.2) !important; }
+html[data-theme="claude"] .bg-zinc-400 { background-color: #7A6B58 !important; }
+html[data-theme="claude"] .bg-zinc-400\/10 { background-color: rgb(122 107 88 / 0.1) !important; }
+html[data-theme="claude"] .bg-zinc-400\/20 { background-color: rgb(122 107 88 / 0.2) !important; }
+
+html[data-theme="claude"] .border-zinc-900 { border-color: #1F1A15 !important; }
+html[data-theme="claude"] .border-zinc-900\/30 { border-color: rgb(31 26 21 / 0.3) !important; }
+html[data-theme="claude"] .border-zinc-900\/60 { border-color: rgb(31 26 21 / 0.6) !important; }
+html[data-theme="claude"] .border-zinc-800 { border-color: #2A241E !important; }
+html[data-theme="claude"] .border-zinc-800\/40 { border-color: rgb(42 36 30 / 0.4) !important; }
+html[data-theme="claude"] .border-zinc-800\/50 { border-color: rgb(42 36 30 / 0.5) !important; }
+html[data-theme="claude"] .border-zinc-800\/60 { border-color: rgb(42 36 30 / 0.6) !important; }
+html[data-theme="claude"] .border-zinc-700 { border-color: #3A3026 !important; }
+html[data-theme="claude"] .border-zinc-700\/30 { border-color: rgb(58 48 38 / 0.3) !important; }
+html[data-theme="claude"] .border-zinc-700\/40 { border-color: rgb(58 48 38 / 0.4) !important; }
+html[data-theme="claude"] .border-zinc-700\/50 { border-color: rgb(58 48 38 / 0.5) !important; }
+html[data-theme="claude"] .border-zinc-600 { border-color: #4A3F33 !important; }
+html[data-theme="claude"] .border-zinc-600\/50 { border-color: rgb(74 63 51 / 0.5) !important; }
+html[data-theme="claude"] .border-zinc-500 { border-color: #5A4A38 !important; }
+html[data-theme="claude"] .border-zinc-500\/20 { border-color: rgb(90 74 56 / 0.2) !important; }
+html[data-theme="claude"] .border-zinc-500\/25 { border-color: rgb(90 74 56 / 0.25) !important; }
+html[data-theme="claude"] .border-zinc-400 { border-color: #7A6B58 !important; }
+html[data-theme="claude"] .border-zinc-400\/20 { border-color: rgb(122 107 88 / 0.2) !important; }
+
+html[data-theme="claude"] .text-zinc-100,
+html[data-theme="claude"] .text-zinc-200,
+html[data-theme="claude"] .text-white { color: #F3ECE1 !important; }
+
+html[data-theme="claude"] .text-zinc-300 { color: #E5DACA !important; }
+html[data-theme="claude"] .text-zinc-400 { color: #B8A98F !important; }
+html[data-theme="claude"] .text-zinc-400\/70 { color: rgb(184 169 143 / 0.7) !important; }
+html[data-theme="claude"] .text-zinc-500 { color: #7A6B58 !important; }
+html[data-theme="claude"] .text-zinc-600 { color: #7A6B58 !important; }
+html[data-theme="claude"] .text-zinc-700 { color: #4A3F33 !important; }
+html[data-theme="claude"] .text-zinc-800 { color: #3A3026 !important; }
+
+html[data-theme="claude"] .bg-emerald-500,
+html[data-theme="claude"] .bg-emerald-600 { background-color: #E89151 !important; }
+html[data-theme="claude"] .bg-emerald-700 { background-color: #C77E50 !important; }
+html[data-theme="claude"] .text-emerald-400,
+html[data-theme="claude"] .text-emerald-500,
+html[data-theme="claude"] .text-emerald-600 { color: #F0A06B !important; }
+html[data-theme="claude"] .hover\:bg-emerald-500:hover { background-color: #F0A06B !important; }
+
+html[data-theme="claude"] .placeholder-zinc-600::placeholder,
+html[data-theme="claude"] .placeholder\:text-zinc-600::placeholder,
+html[data-theme="claude"] .placeholder\:text-zinc-700::placeholder { color: #7A6B58 !important; }
+
+html[data-theme="claude"] ::-webkit-scrollbar-thumb { background: #2A241E; }
+html[data-theme="claude"] ::-webkit-scrollbar-thumb:hover { background: #3A3026; }
 
 @theme inline {
   --color-background: var(--background);

@@ -73,7 +73,7 @@ export function AgentTable({ agents, onKill }: AgentTableProps) {
                       Logs
                     </Button>
                   </Link>
-                  {['running', 'spawning', 'idle'].includes(agent.status) && onKill && (
+                  {['running', 'spawning', 'idle', 'needs_input'].includes(agent.status) && onKill && (
                     <Button
                       variant="ghost"
                       size="sm"
