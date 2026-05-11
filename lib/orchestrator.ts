@@ -1,5 +1,6 @@
 import * as pty from 'node-pty';
-import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage, insertPtyChunk, clearPtyChunks, getPushRequests, getPushRequest, updatePushRequest, createNotification } from '@/lib/db';
+import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage, insertPtyChunk, clearPtyChunks, getPushRequests, getPushRequest, updatePushRequest, createNotification, getActiveProject, getPersonas, getPersonaById, getPersonaBySlug, createBoardTask, getBoardTasks } from '@/lib/db';
+import { wakePersona } from '@/lib/personas';
 import { spawnAgent, resumeAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
@@ -10,20 +11,30 @@ import { cleanLogLine, stripAnsi } from './strip-tui';
 export const ORCHESTRATOR_ID = '__orchestrator__';
 
 // JSON protocol for tool calling via claude --print (no API key required — uses CLI subscription)
-const SYSTEM_PROMPT = `You are the Boardroom orchestrator — a senior engineering manager that coordinates a fleet of AI coding agents.
+const SYSTEM_PROMPT = `You are the Boardroom orchestrator — a senior engineering manager that coordinates a team of personas (named workers with skills + a runtime) via the task board.
 
 When the user gives you a task, plan ALL steps required and execute them in one shot. Do not stop halfway.
 
-Available agent types:
-- "claude": Uses Claude Code CLI — for coding, analysis, research, file operations
-- "codex": Uses OpenAI Codex CLI — alternative coding agent with --full-auto mode
-- "opencode": Uses OpenCode CLI — open-source coding agent
-- "test": Quick shell command — for fast/simple checks
+How work happens in Boardroom:
+- Every project has a set of **personas** (claude / hermes / codex / opencode runtime, each with skills + a system prompt). You'll see the current project's roster in context below.
+- Work flows through the **task board**. You create tasks, assigning them either directly to a persona or leaving them OPEN for the auto-pickup dispatcher to match by skills.
+- When a persona starts work, the spawner brings up its CLI in an isolated git worktree. When the agent finishes it auto-commits + opens a push request the user reviews via /review.
+
+Preferred tools (use these for normal work):
+- "create_task" — drop a task on the board. If you pass a persona_id, the task is assigned directly; otherwise it lands in OPEN and the dispatcher matches it by skills.
+- "wake_persona" — shortcut that creates a task AND wakes a specific persona right now without waiting for the dispatcher tick. Use this when the user names a specific persona ("ask Maya to…").
+
+Lower-level tools (escape hatches — only use if no persona fits, or for the legacy fleet):
+- "spawn_agent": spawn a loose claude/codex/opencode agent OUTSIDE the persona system. Avoid unless the user specifically asks for a one-off.
+- "resume_agent" / "kill_agent": manage existing loose agents.
+- "review_push_request" / "create_workflow" / "run_workflow" / "swarm_agents": legacy paths kept for compatibility.
 
 You MUST respond with ONLY valid JSON in this exact format (no markdown, no extra text):
 {
   "reply": "your message to the user",
   "actions": [
+    {"tool": "create_task", "input": {"title": "...", "description": "...", "persona_id": "maya", "required_skills": ["research"], "priority": 0}},
+    {"tool": "wake_persona", "input": {"persona_id": "iris", "task": "..."}},
     {"tool": "spawn_agent", "input": {"task": "...", "type": "claude", "name": "short-name", "model": "sonnet", "repo": "/path/to/repo"}},
     {"tool": "resume_agent", "input": {"id": "agent-id-or-8char-prefix", "task": "new task description"}},
     {"tool": "kill_agent", "input": {"id": "agent-id-or-prefix"}},
@@ -33,6 +44,11 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
     {"tool": "swarm_agents", "input": {"task": "overall goal", "agents": [{"name": "...", "subtask": "..."}, ...], "repo": "/path"}}
   ]
 }
+
+Persona selection:
+- persona_id can be the full id, a project-qualified slug ("proj:maya"), or just the bare slug ("maya") — bare slugs resolve against the active project.
+- Match the persona to the task: research/web/summarize work → researcher persona; coding/refactoring → engineer/implementer; copy/writing → writer; design/critique → critic.
+- Personas with autonomy=auto pick up open tasks matching their skills automatically — so for skill-tagged tasks you can leave persona_id empty and just create_task with required_skills.
 
 Push Requests:
 - When agents finish work on a repo, they auto-create push requests for review
@@ -352,6 +368,74 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
       }
       return { agents: ids, message: `Swarm of ${ids.length} agents spawned` };
     }
+    // ── Task-board flow (preferred): create_task drops a card on the board.
+    // If persona_id is given the task is pre-assigned; otherwise it lands in
+    // OPEN and the auto-dispatcher picks it up for any matching persona.
+    case 'create_task': {
+      const inp = action.input as {
+        title: string;
+        description?: string;
+        persona_id?: string | null;
+        required_skills?: string[] | null;
+        priority?: number;
+      };
+      const project = getActiveProject();
+      if (!project) return { error: 'No active project — pick one in the workspace switcher first.' };
+      if (!inp.title) return { error: 'title is required' };
+      // Resolve persona by id, by "project:slug", or by bare slug.
+      let personaId: string | null = null;
+      if (inp.persona_id) {
+        const direct = getPersonaById(inp.persona_id);
+        if (direct) personaId = direct.id;
+        else {
+          const slug = inp.persona_id.includes(':') ? inp.persona_id.split(':').pop()! : inp.persona_id;
+          const byslug = getPersonaBySlug(slug, project.id);
+          if (!byslug) return { error: `No persona "${inp.persona_id}" in project "${project.name}"` };
+          personaId = byslug.id;
+        }
+      }
+      const taskId = uuidv4();
+      createBoardTask({
+        id: taskId,
+        title: inp.title,
+        description: inp.description ?? inp.title,
+        project_id: project.id,
+        persona_id: personaId,
+        required_skills: inp.required_skills ?? null,
+        priority: inp.priority ?? 0,
+      });
+      return {
+        task_id: taskId.slice(0, 8),
+        status: personaId ? 'assigned' : 'open',
+        message: personaId
+          ? `Task created and assigned — dispatcher will spawn the agent on the next tick.`
+          : `Task created on the open column — dispatcher will pick it up for any persona whose skills match.`,
+      };
+    }
+    // ── Direct shortcut: wake a specific persona with a task right now.
+    // Bypasses the auto-pickup tick.
+    case 'wake_persona': {
+      const inp = action.input as { persona_id: string; task: string };
+      const project = getActiveProject();
+      if (!project) return { error: 'No active project — pick one in the workspace switcher first.' };
+      if (!inp.persona_id || !inp.task) return { error: 'persona_id and task are both required' };
+      const direct = getPersonaById(inp.persona_id);
+      let persona = direct;
+      if (!persona) {
+        const slug = inp.persona_id.includes(':') ? inp.persona_id.split(':').pop()! : inp.persona_id;
+        persona = getPersonaBySlug(slug, project.id);
+      }
+      if (!persona) return { error: `No persona "${inp.persona_id}" in project "${project.name}"` };
+      const { agentId } = await wakePersona({
+        persona,
+        task: inp.task,
+      });
+      return {
+        persona: persona.name,
+        agent_id: agentId.slice(0, 8),
+        message: `${persona.name} is now working on the task.`,
+      };
+    }
     default:
       return { error: `Unknown tool: ${action.tool}` };
   }
@@ -361,8 +445,32 @@ export async function* runOrchestrator(
   userMessage: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>
 ): AsyncGenerator<OrchestratorEvent> {
-  // Build current fleet context
-  const agents = getAllAgents();
+  // Scope fleet context to the user's active project. Without this, the
+  // orchestrator would pull recent agents from every project on the box —
+  // e.g. when working on "nba-parlay" it could see "launch test" agents and
+  // confidently claim personas from the wrong project belong here.
+  const activeProject = getActiveProject();
+  const activeProjectId = activeProject?.id;
+  const agents = getAllAgents(200, activeProjectId);
+
+  // Project personas — the named long-lived workers (claude/hermes/codex/
+  // opencode) actually available to this orchestrator. The orchestrator needs
+  // these in context to answer "who's on the team?" and to pick the right
+  // persona when spawning sub-tasks.
+  const personas = activeProjectId ? getPersonas(activeProjectId) : [];
+  const personaSummary = personas.length === 0
+    ? '(none — install a starter pack via /marketplace or create one in /personas)'
+    : personas.map(p => {
+        const skills: string[] = (() => {
+          try { return JSON.parse(p.skills_json ?? '[]'); } catch { return []; }
+        })();
+        const runtime = (p.agent_type ?? 'claude');
+        const status = p.status || 'idle';
+        const autonomy = p.autonomy ?? 'manual';
+        const role = p.role ? ` — ${p.role}` : '';
+        const skillsStr = skills.length ? ` · skills: ${skills.slice(0, 6).join(', ')}` : '';
+        return `  - ${p.name} (${runtime}, ${autonomy}, ${status})${role}${skillsStr}`;
+      }).join('\n');
 
   const agentSummary = agents.length === 0
     ? 'No agents.'
@@ -406,7 +514,33 @@ export async function* runOrchestrator(
     `${h.role === 'user' ? 'User' : 'Orchestrator'}: ${h.content}`
   ).join('\n');
 
+  const projectHeader = activeProject
+    ? `Active project: ${activeProject.name}${activeProject.repo ? ` (${activeProject.repo})` : ''}`
+    : 'Active project: (none selected — use the workspace switcher)';
+
+  // Show what's on the board right now so the orchestrator can avoid
+  // duplicating tasks and can pick up loose threads.
+  const boardTasks = activeProjectId ? getBoardTasks(activeProjectId) : [];
+  const openLines = boardTasks.filter(t => t.status === 'open').slice(0, 8);
+  const wipLines = boardTasks.filter(t => t.status === 'in_progress' || t.status === 'assigned').slice(0, 8);
+  const formatTask = (t: typeof boardTasks[number]) =>
+    `  - [${t.status}] ${t.title.slice(0, 70)}${t.persona_name ? ` · ${t.persona_name}` : ''}`;
+  const boardSummary = boardTasks.length === 0
+    ? '(empty)'
+    : [
+        openLines.length ? 'OPEN:\n' + openLines.map(formatTask).join('\n') : '',
+        wipLines.length ? 'IN PROGRESS / ASSIGNED:\n' + wipLines.map(formatTask).join('\n') : '',
+      ].filter(Boolean).join('\n');
+
   const fullPrompt = `${SYSTEM_PROMPT}
+
+${projectHeader}
+
+Personas on this project (named workers you can wake or spawn):
+${personaSummary}
+
+Task board (open + in-progress for this project):
+${boardSummary}
 
 Current fleet status:
   Active agents: ${stats.active}
@@ -414,7 +548,7 @@ Current fleet status:
   Pending tasks: ${stats.pending_tasks}
   Pending push requests: ${stats.pending_prs}
 
-Agent fleet (with output for finished agents):
+Agent fleet for this project (with output for finished agents):
 ${agentSummary}
 
 Push requests awaiting review:
