@@ -48,8 +48,15 @@ function personaSkills(p: Persona): string[] {
   }
 }
 
+// A persona is "available for pickup" when it has no agent running and isn't
+// blocked waiting on a user response. `idle` is the post-finish ready state;
+// `offline` is the post-sleep state. Both have current_agent_id=null and can
+// accept new work — the dispatcher should grab them both. Excludes
+// `working`, `needs_input`, and `error` since those have unresolved state.
 function isAvailable(p: Persona): boolean {
-  return p.autonomy === 'auto' && p.status === 'idle';
+  if (p.autonomy !== 'auto') return false;
+  if (p.current_agent_id) return false;
+  return p.status === 'idle' || p.status === 'offline';
 }
 
 /** Run a single dispatch pass. Returns the number of pickups made.

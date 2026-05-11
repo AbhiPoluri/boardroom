@@ -512,7 +512,10 @@ export function syncPersonaFromAgent(agentId: string): void {
   if (!persona) return;
   const agent = getAgentById(agentId);
   if (!agent) {
-    setPersonaStatus(persona.id, 'offline', { agentId: null, taskId: null });
+    // Agent record was deleted (manually or by cleanup). The persona itself
+    // is still loaded and ready — keep it `idle`, not `offline`. Offline is
+    // reserved for explicit sleep via sleepPersona.
+    setPersonaStatus(persona.id, 'idle', { agentId: null, taskId: null });
     return;
   }
   const open = getOpenPendingQuestionsForAgent(agentId);

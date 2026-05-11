@@ -19,6 +19,7 @@ const COLUMNS: Array<{ key: string; label: string; statuses: string[] }> = [
 ];
 
 interface DispatcherStatus {
+  workingAuto?: number;
   running: boolean;
   lastTickAt: number;
   autoPersonas: number;
@@ -392,11 +393,18 @@ export default function OSHome() {
 
 function DispatcherIndicator({ status }: { status: DispatcherStatus | null }) {
   if (!status) return null;
-  const tone = status.autoPersonas === 0 ? 'off' : status.idleAuto > 0 ? 'on' : 'busy';
+  const working = status.workingAuto ?? 0;
+  // tone: off if no auto personas; busy only if someone is actually working;
+  // on otherwise (there are auto personas and at least some are ready).
+  const tone =
+    status.autoPersonas === 0 ? 'off' :
+    working > 0 && status.idleAuto === 0 ? 'busy' :
+    'on';
   const label =
     status.autoPersonas === 0 ? 'auto: off' :
     status.idleAuto > 0 ? `auto · ${status.idleAuto} ready` :
-    'auto · all busy';
+    working > 0 ? `auto · ${working} working` :
+    'auto · idle';
   return (
     <span className="brr-os-dispatcher" data-tone={tone} title={
       status.autoPersonas === 0
