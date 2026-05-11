@@ -1914,6 +1914,21 @@ export function findPickupTaskFor(personaSkills: string[], projectId: string): B
   return undefined;
 }
 
+/**
+ * Find a task already pre-assigned to a specific persona that hasn't been
+ * spawned yet. Used by the dispatcher to honor explicit assignments from
+ * the orchestrator / board UI without waiting for the open-pickup matcher.
+ */
+export function findAssignedTaskForPersona(personaId: string): BoardTask | undefined {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM tasks
+    WHERE status = 'assigned' AND persona_id = ? AND (agent_id IS NULL OR agent_id = '')
+    ORDER BY priority DESC, created_at ASC
+    LIMIT 1
+  `).get(personaId) as BoardTask | undefined;
+}
+
 // ── Plans ──────────────────────────────────────────────────────────────────
 
 export type PlanStatus = 'draft' | 'active' | 'done' | 'cancelled';

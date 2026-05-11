@@ -7,6 +7,7 @@
 import {
   getPersonas,
   findPickupTaskFor,
+  findAssignedTaskForPersona,
   getActiveProject,
   Persona,
 } from './db';
@@ -51,7 +52,14 @@ function isAvailable(p: Persona): boolean {
   return p.autonomy === 'auto' && p.status === 'idle';
 }
 
-/** Run a single dispatch pass. Returns the number of pickups made. */
+/** Run a single dispatch pass. Returns the number of pickups made.
+ *
+ * Two pickup paths per idle auto-persona:
+ *   1. Pre-assigned task (status='assigned', persona_id matches) — always
+ *      spawned, regardless of skill match. Honors explicit user/orchestrator
+ *      assignments from the board or the `create_task` tool.
+ *   2. Open-pool match (status='open', required_skills ⊆ persona skills) —
+ *      classic skill-based auto-pickup. */
 export async function runDispatchPass(): Promise<number> {
   state.lastTickAt = Date.now();
   const project = getActiveProject();
@@ -61,6 +69,18 @@ export async function runDispatchPass(): Promise<number> {
 
   let pickups = 0;
   for (const persona of personas) {
+    // (1) preassigned to this persona by name — always spawn, no skill check.
+    const assigned = findAssignedTaskForPersona(persona.id);
+    if (assigned) {
+      try {
+        await assignTaskToPersona(persona.id, assigned);
+        pickups += 1;
+        continue;
+      } catch (err) {
+        console.error('[dispatcher] preassigned pickup failed:', err);
+      }
+    }
+    // (2) skill-matched open task — classic auto-pickup.
     const task = findPickupTaskFor(personaSkills(persona), project.id);
     if (!task) continue;
     try {
