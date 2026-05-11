@@ -1939,9 +1939,37 @@ export function getPlanWithSubtasks(id: string): PlanWithSubtasks | undefined {
 
 export function getPlansWithSubtasks(projectId?: string): PlanWithSubtasks[] {
   const plans = getPlans(projectId);
-  return plans
-    .map(p => getPlanWithSubtasks(p.id))
-    .filter((p): p is PlanWithSubtasks => Boolean(p));
+  if (plans.length === 0) return [];
+
+  // Single query for every subtask across every plan, then group in JS.
+  // Avoids the prior N+1 (one getPlanById + one subtasks-join per plan).
+  const db = getDb();
+  const placeholders = plans.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT t.*, p.name AS persona_name, p.color AS persona_color
+    FROM tasks t
+    LEFT JOIN personas p ON p.id = t.persona_id
+    WHERE t.plan_id IN (${placeholders})
+    ORDER BY COALESCE(t.step_order, 0) ASC, t.created_at ASC
+  `).all(...plans.map(p => p.id)) as BoardTaskWithPersona[];
+
+  const byPlan = new Map<string, BoardTaskWithPersona[]>();
+  for (const t of rows) {
+    if (!t.plan_id) continue;
+    const list = byPlan.get(t.plan_id) ?? [];
+    list.push(t);
+    byPlan.set(t.plan_id, list);
+  }
+
+  return plans.map(plan => {
+    const subtasks = byPlan.get(plan.id) ?? [];
+    return {
+      ...plan,
+      subtasks,
+      total: subtasks.length,
+      done: subtasks.filter(t => t.status === 'done').length,
+    };
+  });
 }
 
 export function createPlan(p: {

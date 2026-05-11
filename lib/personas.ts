@@ -282,6 +282,38 @@ function isLikelyFailureRecap(result: string): boolean {
     || /^\s*error[:\s]/i.test(head);
 }
 
+// Short-TTL caches for the recent-task lookups consumed by gatherPersonaHistory
+// and gatherTeamActivity. A plan that fans out across personas typically calls
+// these functions in rapid bursts (one per subtask wake) with the same
+// persona/project keys but different currentTaskIds. Caching the full
+// unfiltered list and applying the excludeTaskId at consume time turns the
+// inner DB hits into pure JS array filters within a 20s window.
+const HISTORY_CACHE_TTL_MS = 20_000;
+
+interface HistoryCacheEntry<T> { at: number; rows: T[] }
+const personaHistoryCache = new Map<string, HistoryCacheEntry<BoardTask>>();
+const teamActivityCache = new Map<string, HistoryCacheEntry<BoardTask & { persona_name: string | null; persona_slug: string | null }>>();
+
+function recentPersonaTasksCached(personaId: string, projectId: string): BoardTask[] {
+  const key = `${personaId}|${projectId}`;
+  const hit = personaHistoryCache.get(key);
+  const now = Date.now();
+  if (hit && now - hit.at < HISTORY_CACHE_TTL_MS) return hit.rows;
+  const rows = getRecentTasksForPersona(personaId, projectId, 10);
+  personaHistoryCache.set(key, { at: now, rows });
+  return rows;
+}
+
+function recentTeamActivityCached(projectId: string, excludePersonaId: string | null) {
+  const key = `${projectId}|${excludePersonaId ?? ''}`;
+  const hit = teamActivityCache.get(key);
+  const now = Date.now();
+  if (hit && now - hit.at < HISTORY_CACHE_TTL_MS) return hit.rows;
+  const rows = getRecentTeamActivity(projectId, 10, excludePersonaId ?? undefined);
+  teamActivityCache.set(key, { at: now, rows });
+  return rows;
+}
+
 /**
  * First non-empty, non-header, non-marker line of a recap — used as the
  * compact summary when we don't have budget for the full body.
@@ -313,7 +345,10 @@ function recapHeadline(result: string, maxChars: number): string {
 function gatherPersonaHistory(personaId: string, projectId: string | null, currentTask: BoardTask, planPredIds: Set<string>): string {
   if (!projectId) return '';
   // Pull a wider net (10) so dedupe + filtering still leaves usable entries.
-  const candidates = getRecentTasksForPersona(personaId, projectId, 10, currentTask.id)
+  // The cache is keyed by (persona, project); excludeTaskId is applied at
+  // filter-time so plan bursts within the TTL window all share one DB read.
+  const candidates = recentPersonaTasksCached(personaId, projectId)
+    .filter(t => t.id !== currentTask.id)
     .filter(t => !planPredIds.has(t.id))
     .filter(t => t.result && !isLikelyFailureRecap(t.result));
   if (candidates.length === 0) return '';
@@ -368,7 +403,8 @@ function gatherTeamActivity(
   planPredIds: Set<string>,
 ): string {
   if (!projectId) return '';
-  const candidates = getRecentTeamActivity(projectId, 10, currentPersonaId ?? undefined, currentTask.id)
+  const candidates = recentTeamActivityCached(projectId, currentPersonaId ?? null)
+    .filter(t => t.id !== currentTask.id)
     .filter(t => !planPredIds.has(t.id))
     .filter(t => t.result && !isLikelyFailureRecap(t.result));
   if (candidates.length === 0) return '';
