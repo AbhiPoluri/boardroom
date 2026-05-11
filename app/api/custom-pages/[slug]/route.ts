@@ -4,6 +4,8 @@ import {
   getCustomPageBySlug,
   updateCustomPage,
   deleteCustomPage,
+  isValidKind,
+  type CustomPageKind,
 } from '@/lib/custom-pages';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ slug: str
     const updated = updateCustomPage(slug, projectId, {
       title: typeof body.title === 'string' ? body.title : undefined,
       content: typeof body.content === 'string' ? body.content : undefined,
+      kind: typeof body.kind === 'string' && isValidKind(body.kind) ? (body.kind as CustomPageKind) : undefined,
     });
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ page: updated });

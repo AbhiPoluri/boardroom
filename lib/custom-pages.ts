@@ -13,11 +13,20 @@
 import { getDb } from './db';
 import { v4 as uuidv4 } from 'uuid';
 
+export type CustomPageKind = 'markdown' | 'analytics';
+
+export const CUSTOM_PAGE_KINDS: CustomPageKind[] = ['markdown', 'analytics'];
+
+export function isValidKind(k: string): k is CustomPageKind {
+  return (CUSTOM_PAGE_KINDS as string[]).includes(k);
+}
+
 export interface CustomPage {
   id: string;
   slug: string;
   title: string;
   content: string;
+  kind: CustomPageKind;
   project_id: string | null;
   author_persona_id: string | null;
   created_at: number;
@@ -58,6 +67,7 @@ export function createCustomPage(input: {
   slug: string;
   title: string;
   content?: string;
+  kind?: CustomPageKind;
   project_id?: string | null;
   author_persona_id?: string | null;
 }): CustomPage {
@@ -68,13 +78,14 @@ export function createCustomPage(input: {
   const now = Date.now();
   const id = uuidv4();
   db.prepare(`
-    INSERT INTO custom_pages (id, slug, title, content, project_id, author_persona_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO custom_pages (id, slug, title, content, kind, project_id, author_persona_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.slug,
     input.title,
     input.content ?? '',
+    input.kind ?? 'markdown',
     input.project_id ?? null,
     input.author_persona_id ?? null,
     now,
@@ -86,7 +97,7 @@ export function createCustomPage(input: {
 export function updateCustomPage(
   slug: string,
   projectId: string | null,
-  patch: { title?: string; content?: string },
+  patch: { title?: string; content?: string; kind?: CustomPageKind },
 ): CustomPage | undefined {
   const existing = getCustomPageBySlug(slug, projectId);
   if (!existing) return undefined;
@@ -95,6 +106,7 @@ export function updateCustomPage(
   const values: unknown[] = [];
   if (typeof patch.title === 'string') { fields.push('title = ?'); values.push(patch.title); }
   if (typeof patch.content === 'string') { fields.push('content = ?'); values.push(patch.content); }
+  if (patch.kind && isValidKind(patch.kind)) { fields.push('kind = ?'); values.push(patch.kind); }
   if (fields.length === 0) return existing;
   fields.push('updated_at = ?');
   values.push(Date.now());

@@ -5,6 +5,7 @@ import { use as usePromise } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Edit2, Save, X } from 'lucide-react';
 import { Markdown } from '@/components/Markdown';
+import { AnalyticsRenderer } from '@/components/AnalyticsRenderer';
 import type { CustomPage } from '@/lib/custom-pages';
 
 export default function CustomPageView({ params }: { params: Promise<{ slug: string }> }) {
@@ -125,10 +126,12 @@ export default function CustomPageView({ params }: { params: Promise<{ slug: str
           </h1>
           <div style={{ color: 'var(--fg-secondary)', fontSize: 14, lineHeight: 1.65 }}>
             {page.content.trim() ? (
-              <Markdown content={page.content} />
+              page.kind === 'analytics'
+                ? <AnalyticsRenderer raw={page.content} />
+                : <Markdown content={page.content} />
             ) : (
               <p style={{ color: 'var(--fg-muted)', fontStyle: 'italic' }}>
-                Empty page. Click <strong>edit</strong> to add content, or have a persona POST markdown to{' '}
+                Empty page. Click <strong>edit</strong> to add content, or have a persona POST to{' '}
                 <code>/api/custom-pages/{slug}</code>.
               </p>
             )}

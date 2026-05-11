@@ -531,6 +531,15 @@ function initSchema(db: Database.Database): void {
     setVersion(22);
   }
 
+  if (currentVersion < 23) {
+    // Slice 3 extended: page can be rendered as one of several "kinds" beyond
+    // plain markdown — e.g. `analytics` parses content as JSON and renders
+    // stat cards + tables via a safe React renderer. Adding more kinds later
+    // is just a new switch arm in the page route; no DB change needed.
+    try { db.exec(`ALTER TABLE custom_pages ADD COLUMN kind TEXT NOT NULL DEFAULT 'markdown'`); } catch {}
+    setVersion(23);
+  }
+
   // Unconditional safety: ensure a default project always exists. Rebinds any
   // orphaned personas/agents/tasks to it. Previously this was gated on schema
   // version, which left users with an empty projects table stranded.

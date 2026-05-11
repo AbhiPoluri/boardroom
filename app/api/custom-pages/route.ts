@@ -5,6 +5,8 @@ import {
   createCustomPage,
   getCustomPageBySlug,
   isValidSlug,
+  isValidKind,
+  CUSTOM_PAGE_KINDS,
 } from '@/lib/custom-pages';
 
 export const dynamic = 'force-dynamic';
@@ -40,10 +42,17 @@ export async function POST(req: NextRequest) {
     if (getCustomPageBySlug(body.slug, projectId)) {
       return NextResponse.json({ error: 'A page with this slug already exists in this project' }, { status: 409 });
     }
+    const kind = typeof body.kind === 'string' ? body.kind : 'markdown';
+    if (!isValidKind(kind)) {
+      return NextResponse.json({
+        error: `kind must be one of ${CUSTOM_PAGE_KINDS.join(', ')}`,
+      }, { status: 400 });
+    }
     const page = createCustomPage({
       slug: body.slug,
       title: body.title,
       content: typeof body.content === 'string' ? body.content : '',
+      kind,
       project_id: projectId,
       author_persona_id: body.author_persona_id ?? null,
     });
