@@ -183,19 +183,42 @@ function applyHandoffs(
   }
 }
 
-// Processes: either node-pty IPty or standard ChildProcess
+// Processes: either node-pty IPty or standard ChildProcess.
+// Pinned on globalThis so Next.js HMR can't orphan the maps — the underlying
+// agent processes outlive any module reload, so losing the lookup map would
+// strand spawned processes with no way to terminate or sync them.
 type AnyProcess = pty.IPty | ChildProcess;
-const processes = new Map<string, AnyProcess>();
-const ptyProcesses = new Map<string, pty.IPty>(); // PTY-specific lookup
-const chunkCounts = new Map<string, number>(); // per-agent PTY chunk counter
+interface SpawnerMaps {
+  processes: Map<string, AnyProcess>;
+  ptyProcesses: Map<string, pty.IPty>;
+  chunkCounts: Map<string, number>;
+  signalHandlersInstalled: boolean;
+}
+const SPAWNER_KEY = '__brr_spawner_maps__';
+const _spawnerG = globalThis as unknown as Record<string, SpawnerMaps>;
+const _spawnerState: SpawnerMaps = _spawnerG[SPAWNER_KEY] ?? (_spawnerG[SPAWNER_KEY] = {
+  processes: new Map(),
+  ptyProcesses: new Map(),
+  chunkCounts: new Map(),
+  signalHandlersInstalled: false,
+});
+const processes = _spawnerState.processes;
+const ptyProcesses = _spawnerState.ptyProcesses;
+const chunkCounts = _spawnerState.chunkCounts;
 
 function cleanupProcesses() {
   for (const [, p] of ptyProcesses) {
     try { p.kill(); } catch {}
   }
 }
-process.on('SIGTERM', cleanupProcesses);
-process.on('SIGINT', cleanupProcesses);
+// Install signal handlers exactly once across all module reloads. Without
+// this guard, every HMR cycle adds another listener, eventually tripping
+// Node's MaxListenersExceededWarning.
+if (!_spawnerState.signalHandlersInstalled) {
+  process.on('SIGTERM', cleanupProcesses);
+  process.on('SIGINT', cleanupProcesses);
+  _spawnerState.signalHandlersInstalled = true;
+}
 
 export function isPtyProcess(agentId: string): boolean {
   return ptyProcesses.has(agentId);

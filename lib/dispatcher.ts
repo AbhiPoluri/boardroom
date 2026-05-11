@@ -12,15 +12,30 @@ import {
 } from './db';
 import { assignTaskToPersona, syncPersonaFromAgent } from './personas';
 
-let started = false;
-let timer: ReturnType<typeof setInterval> | null = null;
-let lastTickAt = 0;
+// HMR-safe singleton state. Next.js dev mode (Turbopack) re-instantiates
+// modules on edit, which would orphan the setInterval timer and reset
+// `started` to false on every reload — making the dispatcher silently die
+// after the first save while the old timer keeps running against orphaned
+// state. Pinning on globalThis keeps a single source of truth across all
+// module reloads.
+interface DispatcherState {
+  started: boolean;
+  timer: ReturnType<typeof setInterval> | null;
+  lastTickAt: number;
+}
+const STATE_KEY = '__brr_dispatcher_state__';
+const g = globalThis as unknown as Record<string, DispatcherState>;
+const state: DispatcherState = g[STATE_KEY] ?? (g[STATE_KEY] = {
+  started: false,
+  timer: null,
+  lastTickAt: 0,
+});
 
 const DEFAULT_INTERVAL_MS = 4000;
 
 /** When the dispatcher last ran (epoch ms). 0 if it has never ticked. */
-export function getDispatcherLastTick(): number { return lastTickAt; }
-export function isDispatcherRunning(): boolean { return started; }
+export function getDispatcherLastTick(): number { return state.lastTickAt; }
+export function isDispatcherRunning(): boolean { return state.started; }
 
 function personaSkills(p: Persona): string[] {
   if (!p.skills_json) return [];
@@ -38,7 +53,7 @@ function isAvailable(p: Persona): boolean {
 
 /** Run a single dispatch pass. Returns the number of pickups made. */
 export async function runDispatchPass(): Promise<number> {
-  lastTickAt = Date.now();
+  state.lastTickAt = Date.now();
   const project = getActiveProject();
   if (!project) return 0;
   const personas = getPersonas(project.id).filter(isAvailable);
@@ -71,27 +86,33 @@ export function syncAllPersonas(): void {
 }
 
 export function startDispatcher(intervalMs = DEFAULT_INTERVAL_MS): void {
-  if (started) return;
-  started = true;
+  if (state.started) return;
+  // If a previous timer is somehow still around (e.g. from a stale module
+  // instance after a partial HMR), clear it before installing a fresh one.
+  if (state.timer) {
+    try { clearInterval(state.timer); } catch { /* ignore */ }
+    state.timer = null;
+  }
+  state.started = true;
   console.log(`[dispatcher] started — tick every ${intervalMs}ms`);
-  timer = setInterval(async () => {
+  state.timer = setInterval(async () => {
     try {
       syncAllPersonas();
       const pickups = await runDispatchPass();
-      lastTickAt = Date.now();
+      state.lastTickAt = Date.now();
       if (pickups > 0) console.log(`[dispatcher] picked up ${pickups} task${pickups === 1 ? '' : 's'}`);
     } catch (err) {
       console.error('[dispatcher] tick failed:', err);
     }
   }, intervalMs);
   // Don't keep the Node process alive just for this loop.
-  if (timer && typeof (timer as { unref?: () => void }).unref === 'function') {
-    (timer as { unref: () => void }).unref();
+  if (state.timer && typeof (state.timer as { unref?: () => void }).unref === 'function') {
+    (state.timer as { unref: () => void }).unref();
   }
 }
 
 export function stopDispatcher(): void {
-  if (timer) clearInterval(timer);
-  timer = null;
-  started = false;
+  if (state.timer) clearInterval(state.timer);
+  state.timer = null;
+  state.started = false;
 }
