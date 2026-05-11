@@ -201,15 +201,95 @@ function initSchema(db: Database.Database): void {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      repo TEXT,
+      branch TEXT,
+      working_dir TEXT,
+      goal TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_questions (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      project_id TEXT,
+      question TEXT NOT NULL,
+      options_json TEXT,
+      default_choice TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      resolution TEXT,
+      original_task TEXT,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_questions_status ON pending_questions(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pending_questions_agent ON pending_questions(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_pending_questions_project ON pending_questions(project_id, status);
+
+    CREATE TABLE IF NOT EXISTS personas (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      slug TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT,
+      avatar TEXT,
+      color TEXT,
+      model TEXT,
+      skills_json TEXT,
+      system_prompt TEXT,
+      autonomy TEXT NOT NULL DEFAULT 'manual',
+      status TEXT NOT NULL DEFAULT 'idle',
+      current_agent_id TEXT,
+      current_task_id TEXT,
+      last_active INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_personas_project ON personas(project_id, status);
+    CREATE INDEX IF NOT EXISTS idx_personas_slug ON personas(project_id, slug);
+
+    CREATE TABLE IF NOT EXISTS plans (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      execution_mode TEXT NOT NULL DEFAULT 'parallel',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      started_at INTEGER,
+      finished_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_plans_project_status ON plans(project_id, status);
   `);
 
-  // Schema versioning
+  // Schema versioning. Older installs created schema_version with just a
+  // `version` column; rebuild it in place so INSERT-by-id below stays sound.
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       id INTEGER PRIMARY KEY,
       version INTEGER NOT NULL
     );
   `);
+
+  const cols = (db.prepare('PRAGMA table_info(schema_version)').all() as Array<{ name: string }>)
+    .map(c => c.name);
+  if (!cols.includes('id')) {
+    const legacy = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
+    const legacyVersion = legacy?.version ?? 0;
+    db.exec(`
+      DROP TABLE schema_version;
+      CREATE TABLE schema_version (
+        id INTEGER PRIMARY KEY,
+        version INTEGER NOT NULL
+      );
+    `);
+    db.prepare('INSERT INTO schema_version (id, version) VALUES (1, ?)').run(legacyVersion);
+  }
 
   const versionRow = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
   const currentVersion = versionRow?.version ?? 0;
@@ -240,6 +320,292 @@ function initSchema(db: Database.Database): void {
     // settings table was added in CREATE TABLE IF NOT EXISTS above — no ALTER needed
     setVersion(4);
   }
+
+  if (currentVersion < 5) {
+    // projects table added in CREATE TABLE IF NOT EXISTS above. Seed a default
+    // project so existing installs have something to scope new work against.
+    const existing = db.prepare('SELECT COUNT(*) as count FROM projects').get() as { count: number };
+    if (existing.count === 0) {
+      const now = Date.now();
+      db.prepare(
+        `INSERT INTO projects (id, name, repo, branch, working_dir, goal, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('default', 'workspace', null, null, null, null, now, now);
+      db.prepare(
+        `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)`
+      ).run('active_project_id', 'default', now);
+    }
+    setVersion(5);
+  }
+
+  if (currentVersion < 6) {
+    // Agents now belong to a project. Backfill existing agents to the default
+    // project so the fleet view doesn't go empty when scoped.
+    try { db.exec(`ALTER TABLE agents ADD COLUMN project_id TEXT`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id)`); } catch {}
+    try {
+      db.prepare(`UPDATE agents SET project_id = 'default' WHERE project_id IS NULL`).run();
+    } catch {}
+    setVersion(6);
+  }
+
+  if (currentVersion < 7) {
+    // pending_questions table added in CREATE TABLE IF NOT EXISTS above.
+    setVersion(7);
+  }
+
+  if (currentVersion < 8) {
+    // personas table added in CREATE TABLE IF NOT EXISTS above.
+    setVersion(8);
+  }
+
+  if (currentVersion < 9) {
+    // Enhance tasks table for the agentic-OS task board.
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN title TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN persona_id TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN required_skills_json TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN deadline INTEGER`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN updated_at INTEGER`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status)`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_persona ON tasks(persona_id, status)`); } catch {}
+    // Backfill: existing tasks have description but no title; copy first 80 chars.
+    try {
+      db.prepare(`UPDATE tasks SET title = SUBSTR(description, 1, 80) WHERE title IS NULL AND description IS NOT NULL`).run();
+    } catch {}
+    try {
+      db.prepare(`UPDATE tasks SET project_id = 'default' WHERE project_id IS NULL`).run();
+    } catch {}
+    setVersion(9);
+  }
+
+  if (currentVersion < 10) {
+    // Cancel any open pending_questions whose owning agent isn't actually a
+    // persona session — those are phantoms from the legacy fleet agents whose
+    // output happened to contain the [ASK_USER] string.
+    try {
+      db.prepare(
+        `UPDATE pending_questions
+         SET status = 'cancelled', resolved_at = ?
+         WHERE status = 'open'
+           AND agent_id NOT IN (SELECT current_agent_id FROM personas WHERE current_agent_id IS NOT NULL)`,
+      ).run(Date.now());
+    } catch {}
+    setVersion(10);
+  }
+
+  if (currentVersion < 11) {
+    // plans table added in CREATE TABLE IF NOT EXISTS above.
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN plan_id TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN step_order INTEGER`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_plan ON tasks(plan_id, step_order)`); } catch {}
+    setVersion(11);
+  }
+
+  if (currentVersion < 12) {
+    // Bind cron jobs to personas (replaces the old generic agent_type/repo flow).
+    try { db.exec(`ALTER TABLE cron_jobs ADD COLUMN persona_id TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE cron_jobs ADD COLUMN project_id TEXT`); } catch {}
+    try { db.exec(`UPDATE cron_jobs SET project_id = 'default' WHERE project_id IS NULL`); } catch {}
+
+    // task_lists: reusable named bundles of task definitions.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS task_lists (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        items_json TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_lists_project ON task_lists(project_id);
+    `);
+    setVersion(12);
+  }
+
+  if (currentVersion < 13) {
+    // Plan canvas: dependencies + persisted node positions per subtask.
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN depends_on_json TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN canvas_x REAL`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN canvas_y REAL`); } catch {}
+    setVersion(13);
+  }
+
+  if (currentVersion < 14) {
+    // Track the last agent a persona ran so the detail page can show recent
+    // output even after the persona goes idle.
+    try { db.exec(`ALTER TABLE personas ADD COLUMN last_agent_id TEXT`); } catch {}
+    setVersion(14);
+  }
+
+  if (currentVersion < 15) {
+    // Handoffs: one persona spawning work for another via [HANDOFF] markers.
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN from_persona_id TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN from_task_id TEXT`); } catch {}
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN handoff_reason TEXT`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_from ON tasks(from_persona_id, from_task_id)`); } catch {}
+    setVersion(15);
+  }
+
+  if (currentVersion < 16) {
+    // Completion signal: 'confirmed' (agent emitted [DONE]), 'auto' (clean
+    // process exit, end_turn stop_reason), 'truncated' (max_tokens), null
+    // (ambiguous/unknown). Agents have the option to confirm explicitly.
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN completion TEXT`); } catch {}
+    setVersion(16);
+  }
+
+  if (currentVersion < 17) {
+    // Track the merge-resolver agent spawned for a conflicted PR so /review
+    // can surface its progress (running / done / failed) instead of silently
+    // returning the conflict and leaving the PR in a half-merged limbo.
+    try { db.exec(`ALTER TABLE push_requests ADD COLUMN resolver_agent_id TEXT`); } catch {}
+    setVersion(17);
+  }
+
+  if (currentVersion < 18) {
+    // Persistent claude session per persona. Each persona's first claude
+    // task generates a session UUID; subsequent tasks pass --resume <id> so
+    // claude itself remembers what tools were called, what files were
+    // touched, and what was discussed — beyond what we manually inject in
+    // the team-activity / persona-history blocks.
+    try { db.exec(`ALTER TABLE personas ADD COLUMN claude_session_id TEXT`); } catch {}
+    setVersion(18);
+  }
+
+  if (currentVersion < 19) {
+    // Plan-level auto-merge. When true, sequential plans approve+merge each
+    // subtask's push request before advancing to the next subtask. Without
+    // it, every persona's branch starts from main with no prior section
+    // applied, so chained file-edit plans (e.g. accumulating into a single
+    // doc) lose work when only one branch can be merged at the end.
+    try { db.exec(`ALTER TABLE plans ADD COLUMN auto_merge INTEGER DEFAULT 0`); } catch {}
+    setVersion(19);
+  }
+
+  if (currentVersion < 20) {
+    // Per-persona runtime selector. Lets a persona run on hermes (or codex /
+    // opencode) instead of always defaulting to claude — useful for routing
+    // research/writing personas to cheaper or non-Claude models when the
+    // Claude quota gets tight.
+    try { db.exec(`ALTER TABLE personas ADD COLUMN agent_type TEXT DEFAULT 'claude'`); } catch {}
+    setVersion(20);
+  }
+
+  // Unconditional safety: ensure a default project always exists. Rebinds any
+  // orphaned personas/agents/tasks to it. Previously this was gated on schema
+  // version, which left users with an empty projects table stranded.
+  try {
+    const projectCount = (db.prepare('SELECT COUNT(*) as c FROM projects').get() as { c: number }).c;
+    if (projectCount === 0) {
+      const now = Date.now();
+      db.prepare(
+        `INSERT INTO projects (id, name, repo, branch, working_dir, goal, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run('default', 'workspace', null, null, null, null, now, now);
+    }
+    const activeId = (db.prepare(`SELECT value FROM settings WHERE key = 'active_project_id'`).get() as { value?: string } | undefined)?.value;
+    if (!activeId) {
+      const first = (db.prepare(`SELECT id FROM projects ORDER BY updated_at DESC LIMIT 1`).get() as { id?: string } | undefined)?.id;
+      if (first) {
+        db.prepare(
+          `INSERT INTO settings (key, value, updated_at) VALUES ('active_project_id', ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        ).run(first, Date.now());
+      }
+    }
+  } catch {}
+}
+
+// ── Projects ────────────────────────────────────────────────────────────────
+
+export interface Project {
+  id: string;
+  name: string;
+  repo: string | null;
+  branch: string | null;
+  working_dir: string | null;
+  goal: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getAllProjects(): Project[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all() as Project[];
+}
+
+export function getProjectById(id: string): Project | undefined {
+  const db = getDb();
+  return db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Project | undefined;
+}
+
+export function createProject(p: {
+  id: string;
+  name: string;
+  repo?: string | null;
+  branch?: string | null;
+  working_dir?: string | null;
+  goal?: string | null;
+}): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO projects (id, name, repo, branch, working_dir, goal, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    p.id,
+    p.name,
+    p.repo ?? null,
+    p.branch ?? null,
+    p.working_dir ?? null,
+    p.goal ?? null,
+    now,
+    now,
+  );
+}
+
+const ALLOWED_PROJECT_COLUMNS = new Set(['name', 'repo', 'branch', 'working_dir', 'goal']);
+
+export function updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'created_at' | 'updated_at'>>): void {
+  const db = getDb();
+  const safeKeys = Object.keys(updates).filter(k => ALLOWED_PROJECT_COLUMNS.has(k));
+  if (safeKeys.length === 0) return;
+  const fields = safeKeys.map(k => `${k} = @${k}`).join(', ');
+  const safeUpdates = Object.fromEntries(
+    safeKeys.map(k => [k, (updates as Record<string, unknown>)[k] ?? null])
+  );
+  db.prepare(`UPDATE projects SET ${fields}, updated_at = @updated_at WHERE id = @id`)
+    .run({ ...safeUpdates, updated_at: Date.now(), id });
+}
+
+export function deleteProject(id: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  // If this was the active project, clear that pointer; UI will pick another.
+  const active = getSetting('active_project_id');
+  if (active === id) {
+    db.prepare('DELETE FROM settings WHERE key = ?').run('active_project_id');
+  }
+}
+
+export function getActiveProject(): Project | undefined {
+  const id = getSetting('active_project_id');
+  if (id) {
+    const found = getProjectById(id);
+    if (found) return found;
+  }
+  // Fall back to most-recently-updated project so the UI never breaks.
+  const all = getAllProjects();
+  return all[0];
+}
+
+export function setActiveProject(id: string): void {
+  const found = getProjectById(id);
+  if (!found) throw new Error(`project ${id} not found`);
+  setSetting('active_project_id', id);
 }
 
 // Settings helpers
@@ -257,9 +623,41 @@ export function setSetting(key: string, value: string): void {
   `).run(key, value, Date.now());
 }
 
+/**
+ * Default persona-pack slugs to auto-install whenever a new project is
+ * created. Stored as a JSON array on the `default_pack_slugs` setting.
+ * The first time a user installs a pack, it's added here automatically so
+ * the next project they spin up gets the same starter team without thinking
+ * about it.
+ */
+export function getDefaultPackSlugs(): string[] {
+  try {
+    const raw = getSetting('default_pack_slugs');
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addDefaultPackSlug(slug: string): void {
+  const current = getDefaultPackSlugs();
+  if (current.includes(slug)) return;
+  setSetting('default_pack_slugs', JSON.stringify([...current, slug]));
+}
+
+export function removeDefaultPackSlug(slug: string): void {
+  const current = getDefaultPackSlugs();
+  if (!current.includes(slug)) return;
+  setSetting('default_pack_slugs', JSON.stringify(current.filter(s => s !== slug)));
+}
+
 // Agent queries
-export function getAllAgents(limit = 200): Agent[] {
+export function getAllAgents(limit = 200, projectId?: string): Agent[] {
   const db = getDb();
+  const whereClause = projectId ? 'WHERE a.project_id = ?' : '';
+  const params: unknown[] = projectId ? [projectId, limit] : [limit];
   return db.prepare(`
     SELECT a.*, l.content AS last_log
     FROM agents a
@@ -286,9 +684,10 @@ export function getAllAgents(limit = 200): Agent[] {
           GROUP BY agent_id
         )
     ) l ON l.agent_id = a.id
+    ${whereClause}
     ORDER BY a.created_at DESC
     LIMIT ?
-  `).all(limit) as Agent[];
+  `).all(...params) as Agent[];
 }
 
 export function getAgentById(id: string): Agent | undefined {
@@ -299,15 +698,17 @@ export function getAgentById(id: string): Agent | undefined {
 export function createAgent(agent: Omit<Agent, 'updated_at'>): void {
   const db = getDb();
   const now = Date.now();
+  // Default project: whichever is active when the agent is born.
+  const projectId = agent.project_id ?? getSetting('active_project_id') ?? 'default';
   db.prepare(`
-    INSERT INTO agents (id, name, type, status, task, repo, worktree_path, pid, port, created_at, updated_at)
-    VALUES (@id, @name, @type, @status, @task, @repo, @worktree_path, @pid, @port, @created_at, @updated_at)
-  `).run({ ...agent, updated_at: now });
+    INSERT INTO agents (id, name, type, status, task, repo, worktree_path, pid, port, project_id, created_at, updated_at)
+    VALUES (@id, @name, @type, @status, @task, @repo, @worktree_path, @pid, @port, @project_id, @created_at, @updated_at)
+  `).run({ ...agent, project_id: projectId, updated_at: now });
 }
 
 const ALLOWED_AGENT_COLUMNS = new Set([
   'name', 'type', 'status', 'task', 'repo', 'worktree_path',
-  'pid', 'port', 'created_at', 'depends_on',
+  'pid', 'port', 'created_at', 'depends_on', 'project_id',
 ]);
 
 export function updateAgent(id: string, updates: Partial<Agent>): void {
@@ -854,14 +1255,38 @@ export function getCronJob(id: string): any {
   return getDb().prepare('SELECT * FROM cron_jobs WHERE id = ?').get(id);
 }
 
-export function createCronJob(job: { id: string; name: string; schedule: string; task: string; agent_type?: string; model?: string; repo?: string }): void {
+export function createCronJob(job: {
+  id: string;
+  name: string;
+  schedule: string;
+  task: string;
+  agent_type?: string;
+  model?: string;
+  repo?: string;
+  persona_id?: string | null;
+  project_id?: string | null;
+}): void {
   const now = Date.now();
   getDb().prepare(
-    'INSERT INTO cron_jobs (id, name, schedule, task, agent_type, model, repo, enabled, run_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)'
-  ).run(job.id, job.name, job.schedule, job.task, job.agent_type || 'claude', job.model || 'sonnet', job.repo || null, now, now);
+    `INSERT INTO cron_jobs
+       (id, name, schedule, task, agent_type, model, repo, persona_id, project_id, enabled, run_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+  ).run(
+    job.id,
+    job.name,
+    job.schedule,
+    job.task,
+    job.agent_type || 'claude',
+    job.model || 'sonnet',
+    job.repo || null,
+    job.persona_id ?? null,
+    job.project_id ?? getSetting('active_project_id') ?? 'default',
+    now,
+    now,
+  );
 }
 
-const ALLOWED_CRON_COLUMNS = new Set(['name', 'schedule', 'task', 'agent_type', 'model', 'repo', 'enabled']);
+const ALLOWED_CRON_COLUMNS = new Set(['name', 'schedule', 'task', 'agent_type', 'model', 'repo', 'enabled', 'persona_id']);
 
 export function updateCronJob(id: string, updates: Record<string, any>): void {
   const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_CRON_COLUMNS.has(k)));
@@ -907,12 +1332,50 @@ export function createPushRequest(pr: {
   );
 }
 
-export function getPushRequests(status?: string, limit = 50): any[] {
+export function getPushRequests(status?: string, limit = 50, projectId?: string): any[] {
   const db = getDb();
-  if (status) {
-    return db.prepare('SELECT * FROM push_requests WHERE status = ? ORDER BY created_at DESC LIMIT ?').all(status, limit);
+  // Push requests don't carry project_id directly — they inherit from the
+  // owning agent. We always LEFT JOIN to expose project metadata so the UI
+  // can label cross-project rows; INNER JOIN when scoping (orphaned PRs whose
+  // agent rows are gone are intentionally hidden in scoped views).
+  const baseSelect = `pr.*, a.project_id AS project_id, p.name AS project_name`;
+  if (projectId) {
+    if (status) {
+      return db.prepare(
+        `SELECT ${baseSelect}
+         FROM push_requests pr
+         JOIN agents a ON a.id = pr.agent_id
+         LEFT JOIN projects p ON p.id = a.project_id
+         WHERE pr.status = ? AND a.project_id = ?
+         ORDER BY pr.created_at DESC LIMIT ?`
+      ).all(status, projectId, limit);
+    }
+    return db.prepare(
+      `SELECT ${baseSelect}
+       FROM push_requests pr
+       JOIN agents a ON a.id = pr.agent_id
+       LEFT JOIN projects p ON p.id = a.project_id
+       WHERE a.project_id = ?
+       ORDER BY pr.created_at DESC LIMIT ?`
+    ).all(projectId, limit);
   }
-  return db.prepare('SELECT * FROM push_requests ORDER BY created_at DESC LIMIT ?').all(limit);
+  if (status) {
+    return db.prepare(
+      `SELECT ${baseSelect}
+       FROM push_requests pr
+       LEFT JOIN agents a ON a.id = pr.agent_id
+       LEFT JOIN projects p ON p.id = a.project_id
+       WHERE pr.status = ?
+       ORDER BY pr.created_at DESC LIMIT ?`
+    ).all(status, limit);
+  }
+  return db.prepare(
+    `SELECT ${baseSelect}
+     FROM push_requests pr
+     LEFT JOIN agents a ON a.id = pr.agent_id
+     LEFT JOIN projects p ON p.id = a.project_id
+     ORDER BY pr.created_at DESC LIMIT ?`
+  ).all(limit);
 }
 
 export function getPushRequest(id: string): any {
@@ -923,8 +1386,16 @@ export function getPushRequest(id: string): any {
   return db.prepare('SELECT * FROM push_requests WHERE id LIKE ? ORDER BY created_at DESC LIMIT 1').get(id + '%');
 }
 
-export function getPendingPushRequestsCount(): number {
-  const row = getDb().prepare("SELECT COUNT(*) as count FROM push_requests WHERE status = 'pending'").get() as { count: number };
+export function getPendingPushRequestsCount(projectId?: string): number {
+  const db = getDb();
+  if (projectId) {
+    const row = db.prepare(
+      `SELECT COUNT(*) as count FROM push_requests pr JOIN agents a ON a.id = pr.agent_id
+       WHERE pr.status = 'pending' AND a.project_id = ?`
+    ).get(projectId) as { count: number };
+    return row.count;
+  }
+  const row = db.prepare("SELECT COUNT(*) as count FROM push_requests WHERE status = 'pending'").get() as { count: number };
   return row.count;
 }
 
@@ -941,4 +1412,747 @@ export function getOrchestratorLogStats(): any {
     'SELECT a.name, COUNT(*) as count FROM logs l JOIN agents a ON l.agent_id = a.id GROUP BY l.agent_id ORDER BY count DESC LIMIT 10'
   ).all();
   return { total, byStream, byAgent };
+}
+
+// ── Pending questions ──────────────────────────────────────────────────────
+
+export type PendingQuestionStatus = 'open' | 'resolved' | 'cancelled';
+
+export interface PendingQuestion {
+  id: string;
+  agent_id: string;
+  project_id: string | null;
+  question: string;
+  options_json: string | null;
+  default_choice: string | null;
+  status: PendingQuestionStatus;
+  resolution: string | null;
+  original_task: string | null;
+  created_at: number;
+  resolved_at: number | null;
+}
+
+export interface PendingQuestionWithAgent extends PendingQuestion {
+  agent_name: string | null;
+  agent_status: string | null;
+}
+
+export function createPendingQuestion(q: {
+  id: string;
+  agent_id: string;
+  project_id?: string | null;
+  question: string;
+  options?: string[] | null;
+  default_choice?: string | null;
+  original_task?: string | null;
+}): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO pending_questions (id, agent_id, project_id, question, options_json, default_choice, status, original_task, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)`
+  ).run(
+    q.id,
+    q.agent_id,
+    q.project_id ?? null,
+    q.question,
+    q.options ? JSON.stringify(q.options) : null,
+    q.default_choice ?? null,
+    q.original_task ?? null,
+    Date.now(),
+  );
+}
+
+export function getPendingQuestionById(id: string): PendingQuestion | undefined {
+  const db = getDb();
+  return db.prepare('SELECT * FROM pending_questions WHERE id = ?').get(id) as PendingQuestion | undefined;
+}
+
+export function getOpenPendingQuestions(projectId?: string, limit = 100): PendingQuestionWithAgent[] {
+  const db = getDb();
+  const where = projectId
+    ? `WHERE q.status = 'open' AND q.project_id = ?`
+    : `WHERE q.status = 'open'`;
+  const params: unknown[] = projectId ? [projectId, limit] : [limit];
+  return db.prepare(`
+    SELECT q.*, a.name AS agent_name, a.status AS agent_status
+    FROM pending_questions q
+    LEFT JOIN agents a ON a.id = q.agent_id
+    ${where}
+    ORDER BY q.created_at DESC
+    LIMIT ?
+  `).all(...params) as PendingQuestionWithAgent[];
+}
+
+export function getOpenPendingQuestionsForAgent(agentId: string): PendingQuestion[] {
+  const db = getDb();
+  return db.prepare(
+    `SELECT * FROM pending_questions WHERE agent_id = ? AND status = 'open' ORDER BY created_at ASC`
+  ).all(agentId) as PendingQuestion[];
+}
+
+export function getOpenPendingQuestionsCount(projectId?: string): number {
+  const db = getDb();
+  if (projectId) {
+    const row = db.prepare(
+      `SELECT COUNT(*) as count FROM pending_questions WHERE status = 'open' AND project_id = ?`
+    ).get(projectId) as { count: number };
+    return row.count;
+  }
+  const row = db.prepare(
+    `SELECT COUNT(*) as count FROM pending_questions WHERE status = 'open'`
+  ).get() as { count: number };
+  return row.count;
+}
+
+export function resolvePendingQuestion(id: string, resolution: string): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE pending_questions SET status = 'resolved', resolution = ?, resolved_at = ? WHERE id = ? AND status = 'open'`
+  ).run(resolution, Date.now(), id);
+}
+
+export function cancelPendingQuestion(id: string): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE pending_questions SET status = 'cancelled', resolved_at = ? WHERE id = ? AND status = 'open'`
+  ).run(Date.now(), id);
+}
+
+export function cancelPendingQuestionsForAgent(agentId: string): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE pending_questions SET status = 'cancelled', resolved_at = ? WHERE agent_id = ? AND status = 'open'`
+  ).run(Date.now(), agentId);
+}
+
+// ── Personas ───────────────────────────────────────────────────────────────
+
+export type PersonaStatus = 'idle' | 'working' | 'needs_input' | 'offline' | 'error';
+export type PersonaAutonomy = 'manual' | 'auto';
+
+export interface Persona {
+  id: string;
+  project_id: string | null;
+  slug: string;
+  name: string;
+  role: string | null;
+  avatar: string | null;
+  color: string | null;
+  model: string | null;
+  agent_type: string | null; // 'claude' | 'hermes' | 'codex' | 'opencode'; default claude when null
+  skills_json: string | null;
+  system_prompt: string | null;
+  autonomy: PersonaAutonomy;
+  status: PersonaStatus;
+  current_agent_id: string | null;
+  current_task_id: string | null;
+  last_agent_id: string | null;
+  last_active: number | null;
+  claude_session_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getPersonas(projectId?: string): Persona[] {
+  const db = getDb();
+  if (projectId) {
+    return db.prepare(`SELECT * FROM personas WHERE project_id = ? ORDER BY name ASC`).all(projectId) as Persona[];
+  }
+  return db.prepare(`SELECT * FROM personas ORDER BY name ASC`).all() as Persona[];
+}
+
+export function getPersonaById(id: string): Persona | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM personas WHERE id = ?`).get(id) as Persona | undefined;
+}
+
+export function getPersonaBySlug(slug: string, projectId: string): Persona | undefined {
+  const db = getDb();
+  return db.prepare(
+    `SELECT * FROM personas WHERE slug = ? AND project_id = ?`
+  ).get(slug, projectId) as Persona | undefined;
+}
+
+export function createPersona(p: {
+  id: string;
+  project_id?: string | null;
+  slug: string;
+  name: string;
+  role?: string | null;
+  avatar?: string | null;
+  color?: string | null;
+  model?: string | null;
+  skills?: string[] | null;
+  system_prompt?: string | null;
+  autonomy?: PersonaAutonomy;
+}): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO personas
+      (id, project_id, slug, name, role, avatar, color, model, skills_json, system_prompt, autonomy, status, created_at, updated_at)
+    VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)
+  `).run(
+    p.id,
+    p.project_id ?? getSetting('active_project_id') ?? 'default',
+    p.slug,
+    p.name,
+    p.role ?? null,
+    p.avatar ?? null,
+    p.color ?? null,
+    p.model ?? null,
+    p.skills ? JSON.stringify(p.skills) : null,
+    p.system_prompt ?? null,
+    p.autonomy ?? 'manual',
+    now,
+    now,
+  );
+}
+
+const ALLOWED_PERSONA_COLUMNS = new Set([
+  'name', 'role', 'avatar', 'color', 'model', 'skills_json', 'system_prompt',
+  'autonomy', 'status', 'current_agent_id', 'current_task_id', 'last_agent_id', 'last_active',
+  'claude_session_id', 'agent_type',
+]);
+
+export function updatePersona(id: string, updates: Partial<Persona>): void {
+  const db = getDb();
+  const safeKeys = Object.keys(updates).filter(k => ALLOWED_PERSONA_COLUMNS.has(k));
+  if (safeKeys.length === 0) return;
+  const fields = safeKeys.map(k => `${k} = @${k}`).join(', ');
+  const safeUpdates = Object.fromEntries(safeKeys.map(k => [k, (updates as Record<string, unknown>)[k] ?? null]));
+  db.prepare(`UPDATE personas SET ${fields}, updated_at = @updated_at WHERE id = @id`)
+    .run({ ...safeUpdates, updated_at: Date.now(), id });
+}
+
+export function setPersonaStatus(
+  id: string,
+  status: PersonaStatus,
+  opts?: { agentId?: string | null; taskId?: string | null }
+): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    UPDATE personas
+    SET status = ?, current_agent_id = ?, current_task_id = ?, last_active = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    status,
+    opts?.agentId !== undefined ? opts.agentId : null,
+    opts?.taskId !== undefined ? opts.taskId : null,
+    now,
+    now,
+    id,
+  );
+}
+
+export function deletePersona(id: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM personas WHERE id = ?`).run(id);
+}
+
+export function getPersonaForAgent(agentId: string): Persona | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM personas WHERE current_agent_id = ?`).get(agentId) as Persona | undefined;
+}
+
+// ── Enhanced tasks (task board) ────────────────────────────────────────────
+
+export type BoardTaskStatus = 'open' | 'assigned' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
+
+export interface BoardTask {
+  id: string;
+  title: string | null;
+  description: string;
+  status: string;
+  agent_id: string | null;
+  persona_id: string | null;
+  project_id: string | null;
+  required_skills_json: string | null;
+  priority: number;
+  deadline: number | null;
+  created_at: number;
+  updated_at: number | null;
+  result: string | null;
+  plan_id: string | null;
+  step_order: number | null;
+  depends_on_json: string | null;
+  canvas_x: number | null;
+  canvas_y: number | null;
+  from_persona_id: string | null;
+  from_task_id: string | null;
+  handoff_reason: string | null;
+  completion: 'confirmed' | 'auto' | 'truncated' | 'refused' | null;
+}
+
+export interface BoardTaskWithPersona extends BoardTask {
+  persona_name: string | null;
+  persona_color: string | null;
+  from_persona_name?: string | null;
+  from_persona_color?: string | null;
+  push_request_id?: string | null;
+  push_request_status?: string | null;
+  push_request_files?: number | null;
+}
+
+export function getBoardTasks(projectId?: string, status?: string): BoardTaskWithPersona[] {
+  const db = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (projectId) { conditions.push('t.project_id = ?'); params.push(projectId); }
+  if (status) { conditions.push('t.status = ?'); params.push(status); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  // Use a correlated subquery to pick only the *most recent* push_request per
+  // task's agent. Without this, an agent that produced multiple PRs (e.g.
+  // initial PR + a retried PR) fans the join out and the same task id appears
+  // twice in the result — causing duplicate-React-key warnings on the board.
+  const rows = db.prepare(`
+    SELECT t.*,
+           p.name AS persona_name, p.color AS persona_color,
+           fp.name AS from_persona_name, fp.color AS from_persona_color,
+           pr.id AS push_request_id, pr.status AS push_request_status,
+           pr.changed_files_json AS push_request_files_json
+    FROM tasks t
+    LEFT JOIN personas p ON p.id = t.persona_id
+    LEFT JOIN personas fp ON fp.id = t.from_persona_id
+    LEFT JOIN push_requests pr ON pr.id = (
+      SELECT id FROM push_requests
+      WHERE agent_id = t.agent_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    )
+    ${where}
+    ORDER BY
+      CASE t.status
+        WHEN 'in_progress' THEN 0
+        WHEN 'blocked' THEN 1
+        WHEN 'assigned' THEN 2
+        WHEN 'open' THEN 3
+        WHEN 'done' THEN 4
+        WHEN 'cancelled' THEN 5
+        ELSE 6
+      END,
+      t.priority DESC,
+      t.created_at DESC
+  `).all(...params) as Array<BoardTaskWithPersona & { push_request_files_json?: string | null }>;
+  for (const r of rows) {
+    if (r.push_request_files_json) {
+      try {
+        const arr = JSON.parse(r.push_request_files_json);
+        r.push_request_files = Array.isArray(arr) ? arr.length : 0;
+      } catch { r.push_request_files = 0; }
+    } else {
+      r.push_request_files = null;
+    }
+    delete (r as unknown as Record<string, unknown>).push_request_files_json;
+  }
+  return rows;
+}
+
+export function getBoardTaskById(id: string): BoardTask | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as BoardTask | undefined;
+}
+
+export function createBoardTask(t: {
+  id: string;
+  title: string;
+  description?: string;
+  project_id?: string | null;
+  persona_id?: string | null;
+  required_skills?: string[] | null;
+  priority?: number;
+  deadline?: number | null;
+  plan_id?: string | null;
+  step_order?: number | null;
+  status?: string;
+  from_persona_id?: string | null;
+  from_task_id?: string | null;
+  handoff_reason?: string | null;
+}): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO tasks
+      (id, title, description, status, agent_id, persona_id, project_id, required_skills_json, priority, deadline, created_at, updated_at, result, plan_id, step_order, from_persona_id, from_task_id, handoff_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+  `).run(
+    t.id,
+    t.title,
+    t.description ?? t.title,
+    t.status ?? (t.persona_id ? 'assigned' : 'open'),
+    null,
+    t.persona_id ?? null,
+    t.project_id ?? getSetting('active_project_id') ?? 'default',
+    t.required_skills ? JSON.stringify(t.required_skills) : null,
+    t.priority ?? 0,
+    t.deadline ?? null,
+    now,
+    now,
+    t.plan_id ?? null,
+    t.step_order ?? null,
+    t.from_persona_id ?? null,
+    t.from_task_id ?? null,
+    t.handoff_reason ?? null,
+  );
+}
+
+const ALLOWED_BOARD_TASK_COLUMNS = new Set([
+  'title', 'description', 'status', 'agent_id', 'persona_id',
+  'required_skills_json', 'priority', 'deadline', 'result',
+  'depends_on_json', 'canvas_x', 'canvas_y', 'step_order',
+  'completion',
+]);
+
+export function updateBoardTask(id: string, updates: Partial<BoardTask>): void {
+  const db = getDb();
+  const safeKeys = Object.keys(updates).filter(k => ALLOWED_BOARD_TASK_COLUMNS.has(k));
+  if (safeKeys.length === 0) return;
+  const fields = safeKeys.map(k => `${k} = @${k}`).join(', ');
+  const safeUpdates = Object.fromEntries(safeKeys.map(k => [k, (updates as Record<string, unknown>)[k] ?? null]));
+  db.prepare(`UPDATE tasks SET ${fields}, updated_at = @updated_at WHERE id = @id`)
+    .run({ ...safeUpdates, updated_at: Date.now(), id });
+}
+
+export function deleteBoardTask(id: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
+}
+
+/**
+ * Bulk-delete cancelled tasks. Used by the auto-prune on startup and by the
+ * "clear cancelled" affordance in the UI. Optionally scoped to a project.
+ *
+ * `olderThanMs`: only remove tasks whose `updated_at` (or `created_at` if
+ * missing) is older than this. Default 0 = delete all cancelled. Pass a
+ * positive number from the caller to keep a recent grace window.
+ */
+export function deleteCancelledTasks(opts: {
+  projectId?: string;
+  olderThanMs?: number;
+} = {}): { removed: number } {
+  const db = getDb();
+  const cutoff = opts.olderThanMs ? Date.now() - opts.olderThanMs : Date.now();
+  const params: unknown[] = ['cancelled', cutoff];
+  let where = `status = ? AND COALESCE(updated_at, created_at, 0) <= ?`;
+  if (opts.projectId) {
+    where += ` AND project_id = ?`;
+    params.push(opts.projectId);
+  }
+  const result = db.prepare(`DELETE FROM tasks WHERE ${where}`).run(...params);
+  return { removed: result.changes };
+}
+
+/**
+ * Find an open task with required skills that one of the given personas can pick up.
+ * Returns the highest-priority oldest open task whose required_skills are a subset
+ * of the persona's skills, or any open task if it has no required_skills.
+ */
+export function findPickupTaskFor(personaSkills: string[], projectId: string): BoardTask | undefined {
+  const db = getDb();
+  const candidates = db.prepare(`
+    SELECT * FROM tasks
+    WHERE status = 'open' AND project_id = ?
+    ORDER BY priority DESC, created_at ASC
+  `).all(projectId) as BoardTask[];
+  for (const t of candidates) {
+    if (!t.required_skills_json) return t;
+    try {
+      const required: string[] = JSON.parse(t.required_skills_json);
+      if (required.every(s => personaSkills.includes(s))) return t;
+    } catch {
+      return t;
+    }
+  }
+  return undefined;
+}
+
+// ── Plans ──────────────────────────────────────────────────────────────────
+
+export type PlanStatus = 'draft' | 'active' | 'done' | 'cancelled';
+export type PlanExecutionMode = 'parallel' | 'sequential';
+
+export interface Plan {
+  id: string;
+  project_id: string | null;
+  title: string;
+  description: string | null;
+  status: PlanStatus;
+  execution_mode: PlanExecutionMode;
+  auto_merge: number; // sqlite stores booleans as 0/1
+  created_at: number;
+  updated_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+export interface PlanWithSubtasks extends Plan {
+  subtasks: BoardTaskWithPersona[];
+  total: number;
+  done: number;
+}
+
+export function getPlans(projectId?: string): Plan[] {
+  const db = getDb();
+  if (projectId) {
+    return db.prepare(`SELECT * FROM plans WHERE project_id = ? ORDER BY updated_at DESC`).all(projectId) as Plan[];
+  }
+  return db.prepare(`SELECT * FROM plans ORDER BY updated_at DESC`).all() as Plan[];
+}
+
+export function getPlanById(id: string): Plan | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM plans WHERE id = ?`).get(id) as Plan | undefined;
+}
+
+export function getPlanWithSubtasks(id: string): PlanWithSubtasks | undefined {
+  const plan = getPlanById(id);
+  if (!plan) return undefined;
+  const db = getDb();
+  const subtasks = db.prepare(`
+    SELECT t.*, p.name AS persona_name, p.color AS persona_color
+    FROM tasks t
+    LEFT JOIN personas p ON p.id = t.persona_id
+    WHERE t.plan_id = ?
+    ORDER BY COALESCE(t.step_order, 0) ASC, t.created_at ASC
+  `).all(id) as BoardTaskWithPersona[];
+  return {
+    ...plan,
+    subtasks,
+    total: subtasks.length,
+    done: subtasks.filter(t => t.status === 'done').length,
+  };
+}
+
+export function getPlansWithSubtasks(projectId?: string): PlanWithSubtasks[] {
+  const plans = getPlans(projectId);
+  return plans
+    .map(p => getPlanWithSubtasks(p.id))
+    .filter((p): p is PlanWithSubtasks => Boolean(p));
+}
+
+export function createPlan(p: {
+  id: string;
+  title: string;
+  description?: string | null;
+  project_id?: string | null;
+  execution_mode?: PlanExecutionMode;
+  auto_merge?: boolean;
+}): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO plans (id, project_id, title, description, status, execution_mode, auto_merge, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+  `).run(
+    p.id,
+    p.project_id ?? getSetting('active_project_id') ?? 'default',
+    p.title,
+    p.description ?? null,
+    p.execution_mode ?? 'parallel',
+    p.auto_merge ? 1 : 0,
+    now,
+    now,
+  );
+}
+
+const ALLOWED_PLAN_COLUMNS = new Set([
+  'title', 'description', 'status', 'execution_mode', 'started_at', 'finished_at',
+]);
+
+export function updatePlan(id: string, updates: Partial<Plan>): void {
+  const db = getDb();
+  const safeKeys = Object.keys(updates).filter(k => ALLOWED_PLAN_COLUMNS.has(k));
+  if (safeKeys.length === 0) return;
+  const fields = safeKeys.map(k => `${k} = @${k}`).join(', ');
+  const safeUpdates = Object.fromEntries(safeKeys.map(k => [k, (updates as Record<string, unknown>)[k] ?? null]));
+  db.prepare(`UPDATE plans SET ${fields}, updated_at = @updated_at WHERE id = @id`)
+    .run({ ...safeUpdates, updated_at: Date.now(), id });
+}
+
+export function deletePlan(id: string): void {
+  const db = getDb();
+  // Tasks referencing this plan are detached, not deleted — they become orphan
+  // board tasks the user can keep, reassign, or delete individually.
+  db.prepare(`UPDATE tasks SET plan_id = NULL, step_order = NULL WHERE plan_id = ?`).run(id);
+  db.prepare(`DELETE FROM plans WHERE id = ?`).run(id);
+}
+
+/**
+ * Look up the most recent push request created by this task's agent (if any).
+ * Lets the OS task board surface a "view diff" affordance per task.
+ */
+export interface TaskPushRef {
+  id: string;
+  branch: string;
+  base_branch: string;
+  status: string;
+  changed_count: number;
+}
+
+export function getPushRefForTask(taskId: string): TaskPushRef | undefined {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT pr.id, pr.branch, pr.base_branch, pr.status, pr.changed_files_json
+    FROM push_requests pr
+    JOIN tasks t ON t.agent_id = pr.agent_id
+    WHERE t.id = ?
+    ORDER BY pr.created_at DESC
+    LIMIT 1
+  `).get(taskId) as { id: string; branch: string; base_branch: string; status: string; changed_files_json: string | null } | undefined;
+  if (!row) return undefined;
+  let count = 0;
+  try {
+    const arr = row.changed_files_json ? JSON.parse(row.changed_files_json) : [];
+    if (Array.isArray(arr)) count = arr.length;
+  } catch {}
+  return { id: row.id, branch: row.branch, base_branch: row.base_branch, status: row.status, changed_count: count };
+}
+
+/** Returns subtasks for a plan ordered by step. */
+export function getSubtasksForPlan(planId: string): BoardTaskWithPersona[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT t.*, p.name AS persona_name, p.color AS persona_color
+    FROM tasks t
+    LEFT JOIN personas p ON p.id = t.persona_id
+    WHERE t.plan_id = ?
+    ORDER BY COALESCE(t.step_order, 0) ASC, t.created_at ASC
+  `).all(planId) as BoardTaskWithPersona[];
+}
+
+/**
+ * Recent done tasks the persona completed on this project. Used to feed
+ * project-level memory context when waking the persona on a new task.
+ * Excludes the task currently being worked on (excludeTaskId).
+ */
+export function getRecentTasksForPersona(
+  personaId: string,
+  projectId: string | null,
+  limit: number,
+  excludeTaskId?: string,
+): BoardTask[] {
+  const db = getDb();
+  const params: unknown[] = [personaId];
+  let where = `persona_id = ? AND status = 'done' AND result IS NOT NULL AND result != ''`;
+  if (projectId) {
+    where += ` AND project_id = ?`;
+    params.push(projectId);
+  }
+  if (excludeTaskId) {
+    where += ` AND id != ?`;
+    params.push(excludeTaskId);
+  }
+  params.push(limit);
+  return db.prepare(
+    `SELECT * FROM tasks WHERE ${where} ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ?`,
+  ).all(...params) as BoardTask[];
+}
+
+/**
+ * Recent done tasks across the project, regardless of which persona did them.
+ * Used to give every persona a glimpse of what their teammates have just
+ * shipped — the cross-persona memory layer beyond plan-level dep context.
+ *
+ * Excludes a persona (typically the persona currently being prompted, so the
+ * block doesn't duplicate their own history) and an optional current task.
+ */
+export function getRecentTeamActivity(
+  projectId: string,
+  limit: number,
+  excludePersonaId?: string,
+  excludeTaskId?: string,
+): Array<BoardTask & { persona_name: string | null; persona_slug: string | null }> {
+  const db = getDb();
+  const params: unknown[] = [projectId];
+  let where = `t.project_id = ? AND t.status = 'done' AND t.result IS NOT NULL AND t.result != ''`;
+  if (excludePersonaId) {
+    where += ` AND (t.persona_id IS NULL OR t.persona_id != ?)`;
+    params.push(excludePersonaId);
+  }
+  if (excludeTaskId) {
+    where += ` AND t.id != ?`;
+    params.push(excludeTaskId);
+  }
+  params.push(limit);
+  return db.prepare(
+    `SELECT t.*, p.name AS persona_name, p.slug AS persona_slug
+     FROM tasks t LEFT JOIN personas p ON p.id = t.persona_id
+     WHERE ${where}
+     ORDER BY COALESCE(t.updated_at, t.created_at) DESC
+     LIMIT ?`,
+  ).all(...params) as Array<BoardTask & { persona_name: string | null; persona_slug: string | null }>;
+}
+
+// ── Task lists (reusable task templates) ───────────────────────────────────
+
+export interface TaskListItem {
+  title: string;
+  description?: string;
+  required_skills?: string[];
+  persona_id?: string | null;
+}
+
+export interface TaskList {
+  id: string;
+  project_id: string | null;
+  title: string;
+  description: string | null;
+  items_json: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getTaskLists(projectId?: string): TaskList[] {
+  const db = getDb();
+  if (projectId) {
+    return db.prepare(`SELECT * FROM task_lists WHERE project_id = ? ORDER BY updated_at DESC`).all(projectId) as TaskList[];
+  }
+  return db.prepare(`SELECT * FROM task_lists ORDER BY updated_at DESC`).all() as TaskList[];
+}
+
+export function getTaskListById(id: string): TaskList | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM task_lists WHERE id = ?`).get(id) as TaskList | undefined;
+}
+
+export function createTaskList(t: {
+  id: string;
+  title: string;
+  description?: string | null;
+  project_id?: string | null;
+  items?: TaskListItem[];
+}): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO task_lists (id, project_id, title, description, items_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    t.id,
+    t.project_id ?? getSetting('active_project_id') ?? 'default',
+    t.title,
+    t.description ?? null,
+    JSON.stringify(t.items ?? []),
+    now,
+    now,
+  );
+}
+
+const ALLOWED_TASK_LIST_COLUMNS = new Set(['title', 'description', 'items_json']);
+
+export function updateTaskList(id: string, updates: Partial<TaskList>): void {
+  const db = getDb();
+  const safeKeys = Object.keys(updates).filter(k => ALLOWED_TASK_LIST_COLUMNS.has(k));
+  if (safeKeys.length === 0) return;
+  const fields = safeKeys.map(k => `${k} = @${k}`).join(', ');
+  const safeUpdates = Object.fromEntries(safeKeys.map(k => [k, (updates as Record<string, unknown>)[k] ?? null]));
+  db.prepare(`UPDATE task_lists SET ${fields}, updated_at = @updated_at WHERE id = @id`)
+    .run({ ...safeUpdates, updated_at: Date.now(), id });
+}
+
+export function deleteTaskList(id: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM task_lists WHERE id = ?`).run(id);
 }
