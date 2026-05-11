@@ -87,8 +87,9 @@ export async function runDispatchPass(): Promise<number> {
         console.error('[dispatcher] preassigned pickup failed:', err);
       }
     }
-    // (2) skill-matched open task — classic auto-pickup.
-    const task = findPickupTaskFor(personaSkills(persona), project.id);
+    // (2) skill-matched open task — classic auto-pickup. Now also picks up
+    // open tasks pre-tagged with this persona's id (orchestrator hints).
+    const task = findPickupTaskFor(persona.id, personaSkills(persona), project.id);
     if (!task) continue;
     try {
       await assignTaskToPersona(persona.id, task);

@@ -1895,14 +1895,22 @@ export function deleteCancelledTasks(opts: {
  * Returns the highest-priority oldest open task whose required_skills are a subset
  * of the persona's skills, or any open task if it has no required_skills.
  */
-export function findPickupTaskFor(personaSkills: string[], projectId: string): BoardTask | undefined {
+export function findPickupTaskFor(personaId: string, personaSkills: string[], projectId: string): BoardTask | undefined {
   const db = getDb();
+  // Two-pass: prefer tasks pre-tagged to this persona (persona_id set) even
+  // while they're in OPEN. Fall back to unassigned open tasks matched by
+  // skills. This honors orchestrator hints like create_task(persona_id=Maya)
+  // — the task lives in OPEN visually, but only Maya (or another matching
+  // persona, if Maya is unavailable) will grab it.
   const candidates = db.prepare(`
     SELECT * FROM tasks
     WHERE status = 'open' AND project_id = ?
-    ORDER BY priority DESC, created_at ASC
-  `).all(projectId) as BoardTask[];
+    ORDER BY (CASE WHEN persona_id = ? THEN 0 ELSE 1 END), priority DESC, created_at ASC
+  `).all(projectId, personaId) as BoardTask[];
   for (const t of candidates) {
+    // If a task is pre-assigned to a *different* persona, skip — only the
+    // tagged persona should pick it up via this path.
+    if (t.persona_id && t.persona_id !== personaId) continue;
     if (!t.required_skills_json) return t;
     try {
       const required: string[] = JSON.parse(t.required_skills_json);

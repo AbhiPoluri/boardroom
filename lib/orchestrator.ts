@@ -1,5 +1,5 @@
 import * as pty from 'node-pty';
-import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage, insertPtyChunk, clearPtyChunks, getPushRequests, getPushRequest, updatePushRequest, createNotification, getActiveProject, getPersonas, getPersonaById, getPersonaBySlug, createBoardTask, getBoardTasks } from '@/lib/db';
+import { getAllAgents, getActiveAgentsCount, getPendingTasksCount, createAgent, getLogsForAgent, recordTokenUsage, insertPtyChunk, clearPtyChunks, getPushRequests, getPushRequest, updatePushRequest, createNotification, getActiveProject, getPersonas, getPersonaById, getPersonaBySlug, createBoardTask, getBoardTasks, createPlan } from '@/lib/db';
 import { wakePersona } from '@/lib/personas';
 import { spawnAgent, resumeAgent } from '@/lib/spawner';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,8 +21,9 @@ How work happens in Boardroom:
 - When a persona starts work, the spawner brings up its CLI in an isolated git worktree. When the agent finishes it auto-commits + opens a push request the user reviews via /review.
 
 Preferred tools (use these for normal work):
-- "create_task" — drop a task on the board. If you pass a persona_id, the task is assigned directly; otherwise it lands in OPEN and the dispatcher matches it by skills.
-- "wake_persona" — shortcut that creates a task AND wakes a specific persona right now without waiting for the dispatcher tick. Use this when the user names a specific persona ("ask Maya to…").
+- "create_task" — drops ONE task on the board's OPEN column. ALWAYS lands in OPEN, never directly in_progress. The optional persona_id is just a routing hint — the task is visible to the user, and the dispatcher will route it to that persona on the next tick if they're auto+ready. Use this for single-step work.
+- "create_plan" — for ANY multi-step request (more than one task, or work that spans multiple personas). Create a plan with ordered subtasks; the plan stages them off-board until the user starts it from /planning. Pick execution_mode: "sequential" when subtasks must run in order (auto_merge=true accumulates file edits across steps), "parallel" when independent.
+- "wake_persona" — only when the user explicitly says "wake X now" or "have Maya do this immediately". Skips the OPEN column and goes straight to working. Avoid by default; let tasks flow through the board.
 
 Lower-level tools (escape hatches — only use if no persona fits, or for the legacy fleet):
 - "spawn_agent": spawn a loose claude/codex/opencode agent OUTSIDE the persona system. Avoid unless the user specifically asks for a one-off.
@@ -34,6 +35,7 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no extr
   "reply": "your message to the user",
   "actions": [
     {"tool": "create_task", "input": {"title": "...", "description": "...", "persona_id": "maya", "required_skills": ["research"], "priority": 0}},
+    {"tool": "create_plan", "input": {"title": "...", "description": "...", "execution_mode": "sequential", "auto_merge": true, "subtasks": [{"title": "step 1", "description": "...", "persona_id": "maya"}, {"title": "step 2", "description": "...", "persona_id": "theo"}]}},
     {"tool": "wake_persona", "input": {"persona_id": "iris", "task": "..."}},
     {"tool": "spawn_agent", "input": {"task": "...", "type": "claude", "name": "short-name", "model": "sonnet", "repo": "/path/to/repo"}},
     {"tool": "resume_agent", "input": {"id": "agent-id-or-8char-prefix", "task": "new task description"}},
@@ -395,10 +397,17 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
         }
       }
       const taskId = uuidv4();
+      // Always land in OPEN. persona_id is a "preferred assignee" hint —
+      // the task is visible on the board immediately. The dispatcher will
+      // route it to that persona on the next tick if they're auto+ready,
+      // or the user can manually wake them. This avoids the prior behavior
+      // where pre-assigned tasks jumped straight into IN_PROGRESS, hiding
+      // the orchestrator's planning from the user.
       createBoardTask({
         id: taskId,
         title: inp.title,
         description: inp.description ?? inp.title,
+        status: 'open',
         project_id: project.id,
         persona_id: personaId,
         required_skills: inp.required_skills ?? null,
@@ -406,10 +415,89 @@ async function executeAction(action: OrchestratorAction): Promise<unknown> {
       });
       return {
         task_id: taskId.slice(0, 8),
-        status: personaId ? 'assigned' : 'open',
+        status: 'open',
+        assignee: personaId ? personaId.split(':').pop() : null,
         message: personaId
-          ? `Task created and assigned — dispatcher will spawn the agent on the next tick.`
-          : `Task created on the open column — dispatcher will pick it up for any persona whose skills match.`,
+          ? `Task placed in OPEN, tagged for the suggested persona — dispatcher will route it on the next tick if they're auto+ready.`
+          : `Task placed in OPEN — dispatcher will pick it up for any persona whose skills match.`,
+      };
+    }
+    // ── Plan: a structured multi-step workflow. Subtasks land on the board
+    // in DRAFT until the user (or the plan engine) starts the plan. Use this
+    // for any multi-persona / multi-step request — NOT a string of
+    // independent create_tasks. Returns the plan id; the user starts it from
+    // /planning or via PATCH /api/plans/<id> {action:'start'}.
+    case 'create_plan': {
+      const inp = action.input as {
+        title: string;
+        description?: string;
+        execution_mode?: 'parallel' | 'sequential';
+        auto_merge?: boolean;
+        subtasks: Array<{
+          title: string;
+          description?: string;
+          persona_id?: string;
+          required_skills?: string[];
+        }>;
+      };
+      const project = getActiveProject();
+      if (!project) return { error: 'No active project — pick one in the workspace switcher first.' };
+      if (!inp.title) return { error: 'title is required' };
+      if (!Array.isArray(inp.subtasks) || inp.subtasks.length === 0) {
+        return { error: 'subtasks must be a non-empty array' };
+      }
+      // Resolve persona slugs/ids against this project.
+      const resolved: Array<{ title: string; description?: string; persona_id: string | null; required_skills: string[] | null }> = [];
+      for (const s of inp.subtasks) {
+        if (!s.title) return { error: 'every subtask needs a title' };
+        let personaId: string | null = null;
+        if (s.persona_id) {
+          const direct = getPersonaById(s.persona_id);
+          if (direct) personaId = direct.id;
+          else {
+            const slug = s.persona_id.includes(':') ? s.persona_id.split(':').pop()! : s.persona_id;
+            const p = getPersonaBySlug(slug, project.id);
+            if (!p) return { error: `subtask "${s.title}": no persona "${s.persona_id}" in project "${project.name}"` };
+            personaId = p.id;
+          }
+        }
+        resolved.push({
+          title: s.title,
+          description: s.description,
+          persona_id: personaId,
+          required_skills: s.required_skills ?? null,
+        });
+      }
+      const planId = uuidv4();
+      createPlan({
+        id: planId,
+        title: inp.title,
+        description: inp.description ?? null,
+        project_id: project.id,
+        execution_mode: inp.execution_mode === 'sequential' ? 'sequential' : 'parallel',
+        auto_merge: !!inp.auto_merge,
+      });
+      // Subtasks land as 'staged' so they don't litter the board until the
+      // plan is explicitly started.
+      let step = 0;
+      for (const s of resolved) {
+        createBoardTask({
+          id: uuidv4(),
+          title: s.title,
+          description: s.description ?? s.title,
+          status: 'staged',
+          project_id: project.id,
+          persona_id: s.persona_id,
+          required_skills: s.required_skills,
+          plan_id: planId,
+          step_order: step++,
+        });
+      }
+      return {
+        plan_id: planId.slice(0, 8),
+        subtasks: resolved.length,
+        execution_mode: inp.execution_mode ?? 'parallel',
+        message: `Plan staged with ${resolved.length} subtask(s). Start it from /planning or PATCH /api/plans/${planId} {action:"start"}.`,
       };
     }
     // ── Direct shortcut: wake a specific persona with a task right now.
