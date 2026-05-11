@@ -494,6 +494,18 @@ function initSchema(db: Database.Database): void {
     setVersion(20);
   }
 
+  if (currentVersion < 21) {
+    // Indexes for the orchestrator's hot paths. The dispatcher ticks every 4s
+    // and the plan engine fans out across personas — without these,
+    // gatherPersonaHistory + auto-merge + claude session resume all do
+    // unindexed scans on tables that grow indefinitely.
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_persona_status_date ON tasks(persona_id, status, updated_at DESC)`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_push_requests_agent ON push_requests(agent_id)`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_personas_claude_session ON personas(claude_session_id)`); } catch {}
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_plan ON tasks(plan_id)`); } catch {}
+    setVersion(21);
+  }
+
   // Unconditional safety: ensure a default project always exists. Rebinds any
   // orphaned personas/agents/tasks to it. Previously this was gated on schema
   // version, which left users with an empty projects table stranded.
