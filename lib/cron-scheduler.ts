@@ -33,11 +33,36 @@ async function executeCronJob(job: {
   agent_type: string;
   model: string;
   repo: string | null;
+  persona_id?: string | null;
 }) {
+  // Persona-bound schedule: wake the persona with the prompt as a task.
+  if (job.persona_id) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getPersonaById } = require('./db') as typeof import('./db');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { wakePersona } = require('./personas') as typeof import('./personas');
+      const persona = getPersonaById(job.persona_id);
+      if (!persona) {
+        log.error(`[cron] persona ${job.persona_id} not found for job "${job.name}"`);
+        recordCronRun(job.id, '', 'error');
+        return;
+      }
+      const result = await wakePersona({ persona, task: job.task });
+      recordCronRun(job.id, result.agentId, 'running');
+      log.info(`[cron] "${job.name}" woke persona ${persona.name} → agent ${result.agentId.slice(0, 8)}`);
+      return;
+    } catch (err) {
+      log.error(`[cron] Failed to wake persona for job "${job.name}":`, err);
+      recordCronRun(job.id, '', 'error');
+      return;
+    }
+  }
+
+  // Fallback: legacy generic-agent cron (kept for compatibility).
   const agentId = uuidv4();
   const agentName = `cron-${job.name}`;
   const now = Date.now();
-
   try {
     createAgent({
       id: agentId,

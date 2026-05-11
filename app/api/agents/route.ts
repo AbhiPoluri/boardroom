@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { getAllAgents, createAgent, getActiveAgentsCount, getPendingTasksCount, getLogCountToday, getAllTokenUsage, insertLog, updateAgent } from '@/lib/db';
+import { getAllAgents, createAgent, getActiveAgentsCount, getPendingTasksCount, getLogCountToday, getAllTokenUsage, insertLog, updateAgent, getSetting } from '@/lib/db';
 import { spawnAgent } from '@/lib/spawner';
 import { startMonitor } from '@/lib/agent-monitor';
 import { startCronScheduler } from '@/lib/cron-scheduler';
@@ -45,14 +45,23 @@ export async function GET(req: NextRequest) {
   try {
     const limitParam = req.nextUrl.searchParams.get('limit');
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10))) : 200;
-    const agents = getAllAgents(limit);
+
+    // ?project=ID scopes the fleet to a single project. ?project=all (or no
+    // param + an explicit ?all=1) shows everything across projects.
+    const projectParam = req.nextUrl.searchParams.get('project');
+    const showAll = req.nextUrl.searchParams.get('all') === '1' || projectParam === 'all';
+    const projectId = showAll
+      ? undefined
+      : projectParam || getSetting('active_project_id') || undefined;
+
+    const agents = getAllAgents(limit, projectId);
     const agentTokens = getAllTokenUsage();
     const stats = {
       active: getActiveAgentsCount(),
       pending_tasks: getPendingTasksCount(),
       logs_today: getLogCountToday(),
     };
-    return NextResponse.json({ agents, stats, tokens: agentTokens });
+    return NextResponse.json({ agents, stats, tokens: agentTokens, project_id: projectId ?? null });
   } catch (err) {
     console.error('GET /api/agents error:', err);
     return NextResponse.json({ error: 'Failed to fetch agents' }, { status: 500 });

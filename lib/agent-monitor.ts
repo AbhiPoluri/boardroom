@@ -4,12 +4,14 @@
  * No user intervention required.
  */
 
-import { getAllAgents, getLogsForAgent, insertLog, cleanupOldPtyChunks, cleanupOldAgents } from './db';
+import { getAllAgents, getLogsForAgent, insertLog, cleanupOldPtyChunks, cleanupOldAgents, updateAgentStatus } from './db';
 import { sendToAgent, isRunning } from './spawner';
 import { runClaudeCLI } from './orchestrator';
 import type { Agent } from '@/types';
 
-// Patterns that indicate the process is waiting for user input
+// Patterns that indicate the process is waiting for user input.
+// These cover both raw CLI prompts and natural-language questions an agent
+// might ask while it streams to its log.
 const WAITING_PATTERNS = [
   /\[Y\/n\]/i,
   /\[y\/N\]/i,
@@ -24,7 +26,13 @@ const WAITING_PATTERNS = [
   /continue\s*\?/i,
   /proceed\s*\?/i,
   /overwrite\s*\?/i,
+  /\b(would you like|should i|do you want|shall i|please (confirm|specify|provide|tell|let)|which (one|of these|do you|would you|should i))\b/i,
 ];
+
+// How long the last line must hold steady before we declare the agent stuck
+// on a prompt. Short enough to feel responsive, long enough that mid-stream
+// punctuation doesn't cause a false flip.
+const NEEDS_INPUT_GRACE_MS = 4000;
 
 // Simple rule-based responses for common patterns (fast path — no LLM needed)
 function quickResponse(line: string): string | null {
@@ -66,7 +74,7 @@ async function tick(): Promise<void> {
   }
 
   const agents = getAllAgents();
-  const active = agents.filter(a => a.status === 'running' || a.status === 'spawning');
+  const active = agents.filter(a => a.status === 'running' || a.status === 'spawning' || a.status === 'needs_input');
 
   // Clean up tracking state for agents that are no longer active
   const activeIds = new Set(active.map(a => a.id));
@@ -89,37 +97,44 @@ async function checkAgent(agent: Agent): Promise<void> {
 
   const lastLog = logs[logs.length - 1];
   const prevLastId = lastSeenLogId.get(agent.id) ?? -1;
+  const lastContent = lastLog.content.trim();
+  const looksLikeWaiting = WAITING_PATTERNS.some(p => p.test(lastContent));
 
   if (lastLog.id > prevLastId) {
-    // New logs came in — update tracking, not stuck
+    // New output — agent is producing again. If we'd flagged it as waiting,
+    // clear that as soon as it starts talking again.
+    if (agent.status === 'needs_input') {
+      try { updateAgentStatus(agent.id, 'running'); } catch {}
+    }
     lastSeenLogId.set(agent.id, lastLog.id);
     lastActivityAt.set(agent.id, Date.now());
     return;
   }
 
-  // No new logs since last check — see how long it's been quiet
   const lastActivity = lastActivityAt.get(agent.id) ?? Date.now();
   const quietMs = Date.now() - lastActivity;
 
-  // Only intervene after 45s of silence
+  // Soft flip: as soon as the last visible line looks like a prompt and the
+  // agent has stopped streaming for a beat, surface it as needs_input. The
+  // user sees the amber badge well before the 45s auto-respond window kicks
+  // in. False positives self-heal once new output arrives (above branch).
+  if (looksLikeWaiting && quietMs >= NEEDS_INPUT_GRACE_MS && agent.status === 'running') {
+    try { updateAgentStatus(agent.id, 'needs_input'); } catch {}
+  }
+
   if (quietMs < 45000) return;
   if (!isRunning(agent.id)) {
-    // Agent died — clean up tracking state
     lastSeenLogId.delete(agent.id);
     lastActivityAt.delete(agent.id);
     beingAssessed.delete(agent.id);
     return;
   }
 
-  const lastContent = lastLog.content.trim();
-  const looksLikeWaiting = WAITING_PATTERNS.some(p => p.test(lastContent));
-
   if (!looksLikeWaiting) return;
 
   beingAssessed.add(agent.id);
   try {
     await respondToAgent(agent, logs.map(l => l.content), lastContent);
-    // Reset activity timer so we don't spam
     lastActivityAt.set(agent.id, Date.now());
   } finally {
     beingAssessed.delete(agent.id);

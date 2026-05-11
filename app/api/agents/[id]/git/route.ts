@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   switch (action) {
     case 'merge': {
-      const result = mergeWorktreeBranch(agent.repo, info.branch, baseBranch);
+      const result = mergeWorktreeBranch(agent.repo, info.branch, baseBranch, agent.id);
       return NextResponse.json(result);
     }
     case 'cherry-pick': {
