@@ -11,7 +11,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { useProjects } from '@/lib/use-projects';
 import {
   FileText, Workflow, Home, Sparkles, SquareCode, Plus, Search, Wrench,
-  LayoutDashboard, Bell, Users, ListTodo, Inbox, GitPullRequest,
+  LayoutDashboard, Bell, Users, ListTodo, Inbox, GitPullRequest, BookOpen,
 } from 'lucide-react';
 
 function RingMark({ size = 14 }: { size?: number }) {
@@ -39,6 +39,7 @@ const NAV_ITEMS = [
   { href: '/planning', icon: Sparkles, label: 'planning' },
   { href: '/workflows', icon: Workflow, label: 'workflows' },
   { href: '/review', icon: GitPullRequest, label: 'review' },
+  { href: '/custom', icon: BookOpen, label: 'pages' },
   { href: '/marketplace', icon: FileText, label: 'marketplace' },
   { href: '/settings', icon: Wrench, label: 'settings' },
 ];

@@ -506,6 +506,31 @@ function initSchema(db: Database.Database): void {
     setVersion(21);
   }
 
+  if (currentVersion < 22) {
+    // Slice 3: modular UI pages authored by agents. The minimal viable shape
+    // is markdown-only (no JSX/MDX eval) — personas write content via the
+    // /api/custom-pages CRUD endpoints; /custom/[slug] renders server-side
+    // through the existing dep-free Markdown component. Project-scoped so
+    // different boards have their own page set.
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS custom_pages (
+          id TEXT PRIMARY KEY,
+          slug TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL DEFAULT '',
+          project_id TEXT,
+          author_persona_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (project_id, slug)
+        );
+        CREATE INDEX IF NOT EXISTS idx_custom_pages_project ON custom_pages(project_id, updated_at DESC);
+      `);
+    } catch {}
+    setVersion(22);
+  }
+
   // Unconditional safety: ensure a default project always exists. Rebinds any
   // orphaned personas/agents/tasks to it. Previously this was gated on schema
   // version, which left users with an empty projects table stranded.
