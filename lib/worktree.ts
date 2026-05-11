@@ -223,6 +223,15 @@ export function getWorktreeDiff(worktreePath: string, baseBranch?: string): stri
   return [diff, stagedDiff, wdDiff].filter(Boolean).join('\n') || null;
 }
 
+// Sync sleep without blocking the C runtime — used for the small retry
+// window in the active-agent guard below. Acceptable here because the merge
+// is inherently sync (better-sqlite3 + git CLI) and the worst-case wait is
+// ~300ms across 3 retries.
+function syncSleep(ms: number): void {
+  const sab = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(sab), 0, 0, ms);
+}
+
 /** Merge agent branch back into base branch. On conflict, auto-resolves via a resolver agent. */
 export function mergeWorktreeBranch(
   repo: string,
@@ -241,14 +250,31 @@ export function mergeWorktreeBranch(
     //   - agents in isolated worktrees (worktree_path != repo) — they aren't
     //     touching the parent repo's HEAD or working tree, so a merge here
     //     can't corrupt their state
+    //
+    // Retry the lookup a few times before giving up: back-to-back plan steps
+    // can stack two agents in 'running' state for ~150ms before the spawner
+    // exit handler flips the previous one to 'done'. Without the retry, the
+    // second subtask's auto-merge fails because the previous agent's row
+    // still looks active.
     const db = getDb();
-    const activeAgent = excludeAgentId
+    const query = excludeAgentId
       ? db.prepare(
           "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') AND id != ? AND (worktree_path IS NULL OR worktree_path = ?) LIMIT 1"
-        ).get(repo, excludeAgentId, repo)
+        )
       : db.prepare(
           "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') AND (worktree_path IS NULL OR worktree_path = ?) LIMIT 1"
-        ).get(repo, repo);
+        );
+
+    const MAX_ATTEMPTS = 3;
+    const RETRY_DELAY_MS = 150;
+    let activeAgent: unknown = null;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      activeAgent = excludeAgentId
+        ? query.get(repo, excludeAgentId, repo)
+        : query.get(repo, repo);
+      if (!activeAgent) break;
+      if (attempt < MAX_ATTEMPTS - 1) syncSleep(RETRY_DELAY_MS);
+    }
     if (activeAgent) {
       return { success: false, message: `Cannot merge: an agent is still active in repo ${repo}` };
     }
