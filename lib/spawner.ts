@@ -741,7 +741,12 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
     const STARTUP_GRACE_MS = 20000;       // ignore idle during first 20s
     const IDLE_TIMEOUT_MS = 15000;        // 15s of no output = done (claude TUI)
     const HERMES_IDLE_MS = 30000;         // hermes streams slowly; longer cap
-    const DONE_GRACE_MS = 5000;           // [DONE] seen → wait 5s then terminate
+    const DONE_GRACE_CLAUDE_MS = 5000;    // claude TUI exits cleanly via /exit — 5s is plenty
+    const DONE_GRACE_HERMES_MS = 10000;   // one-shot CLIs (hermes/codex/opencode) buffer
+                                          // stdout in -z/-p mode; some MCP shutdown bugs
+                                          // (e.g. @browsermcp/mcp recursion) leave the
+                                          // process wedged. 10s lets the buffer flush
+                                          // before we SIGTERM.
 
     // Line buffer: PTY data arrives in arbitrary chunks, so a line may be
     // split across multiple onData calls. Buffer incomplete lines and only
@@ -811,6 +816,7 @@ export async function spawnAgent(opts: SpawnOptions): Promise<{ pid: number; wor
       const sinceStart = Date.now() - startTime;
       if (sinceStart > STARTUP_GRACE_MS || sawDoneMarker) {
         const isClaudeTui = type === 'claude'; // legacy claude PTY path
+        const DONE_GRACE_MS = isClaudeTui ? DONE_GRACE_CLAUDE_MS : DONE_GRACE_HERMES_MS;
         const timeoutMs = sawDoneMarker
           ? DONE_GRACE_MS
           : (isClaudeTui ? IDLE_TIMEOUT_MS : HERMES_IDLE_MS);

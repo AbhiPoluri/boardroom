@@ -34,42 +34,28 @@ export async function register() {
     }
 
     // Reap ghost agents whose recorded PIDs are dead — happens after a restart
-    // where the row was left as 'running'. Must run before the dispatcher tick
-    // so its persona sync sees the corrected status on first pass.
-    try {
-      const { reapGhostAgents } = await import('@/lib/spawner');
-      reapGhostAgents();
-    } catch (err) {
-      console.error('[instrumentation] ghost-agent reap failed:', err);
-    }
-
-    // Prune cancelled tasks older than 24h so the OS board doesn't accumulate
-    // dead rows over time. Plans cancel-cascade their subtasks → those pile up
-    // fast. Anything cancelled within the last 24h is kept so the user can
-    // still see what they cancelled in the recent-activity timeline.
-    try {
-      const { deleteCancelledTasks } = await import('@/lib/db');
-      const { removed } = deleteCancelledTasks({ olderThanMs: 24 * 60 * 60 * 1000 });
-      if (removed > 0) console.log(`[instrumentation] pruned ${removed} cancelled task(s) older than 24h`);
-    } catch (err) {
-      console.error('[instrumentation] cancelled-task prune failed:', err);
-    }
-
-    // Kick off the auto-pickup dispatcher loop. Idempotent — safe on hot reload.
-    try {
-      const { startDispatcher } = await import('@/lib/dispatcher');
-      startDispatcher();
-    } catch (err) {
-      console.error('[instrumentation] dispatcher start failed:', err);
-    }
-
-    // Push system-prompt updates to existing personas one time per version.
-    // Bump PROMPT_REFRESH_VERSION when prompt language changes again.
+    // where the row was left as 'running'. Must complete before the dispatcher
+    // starts so its first persona sync sees the corrected status.
+    // Prune + prompt-refresh have no ordering constraint, so run them in
+    // parallel with the reaper to cut boot latency.
     const PROMPT_REFRESH_VERSION = '3';
-    try {
-      const { getSetting, setSetting, getActiveProject } = await import('@/lib/db');
-      const last = getSetting('prompt_refresh_version');
-      if (last !== PROMPT_REFRESH_VERSION) {
+
+    await Promise.allSettled([
+      (async () => {
+        const { reapGhostAgents } = await import('@/lib/spawner');
+        reapGhostAgents();
+      })().catch((err) => console.error('[instrumentation] ghost-agent reap failed:', err)),
+
+      (async () => {
+        const { deleteCancelledTasks } = await import('@/lib/db');
+        const { removed } = deleteCancelledTasks({ olderThanMs: 24 * 60 * 60 * 1000 });
+        if (removed > 0) console.log(`[instrumentation] pruned ${removed} cancelled task(s) older than 24h`);
+      })().catch((err) => console.error('[instrumentation] cancelled-task prune failed:', err)),
+
+      (async () => {
+        const { getSetting, setSetting, getActiveProject } = await import('@/lib/db');
+        const last = getSetting('prompt_refresh_version');
+        if (last === PROMPT_REFRESH_VERSION) return;
         const project = getActiveProject();
         if (project) {
           const { refreshStarterPersonaPrompts } = await import('@/lib/personas');
@@ -79,9 +65,16 @@ export async function register() {
           if (a + b > 0) console.log(`[prompts] refreshed ${a + b} persona system prompts to v${PROMPT_REFRESH_VERSION}`);
         }
         setSetting('prompt_refresh_version', PROMPT_REFRESH_VERSION);
-      }
+      })().catch((err) => console.error('[instrumentation] prompt refresh failed:', err)),
+    ]);
+
+    // Kick off the auto-pickup dispatcher loop AFTER the reaper has finished.
+    // Idempotent — safe on hot reload.
+    try {
+      const { startDispatcher } = await import('@/lib/dispatcher');
+      startDispatcher();
     } catch (err) {
-      console.error('[instrumentation] prompt refresh failed:', err);
+      console.error('[instrumentation] dispatcher start failed:', err);
     }
   }
 }
