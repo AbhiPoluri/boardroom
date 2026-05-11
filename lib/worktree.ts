@@ -227,17 +227,28 @@ export function getWorktreeDiff(worktreePath: string, baseBranch?: string): stri
 export function mergeWorktreeBranch(
   repo: string,
   agentBranch: string,
-  baseBranch = 'main'
+  baseBranch = 'main',
+  excludeAgentId?: string,
 ): { success: boolean; message: string; needsAgent?: boolean; conflictFiles?: string[] } {
   try {
     if (!/^[\w\-\/\.]+$/.test(baseBranch)) throw new Error('Invalid branch name');
     if (!/^[\w\-\/\.]+$/.test(agentBranch)) throw new Error('Invalid branch name');
 
-    // Guard: refuse to merge if any agent with this repo is still running or spawning
+    // Guard: refuse to merge if any *other* agent is touching this repo's
+    // working tree directly. We exclude:
+    //   - the agent whose branch we're merging (its row may briefly still show
+    //     'running' between exit and the dispatcher tick that flips it to done)
+    //   - agents in isolated worktrees (worktree_path != repo) — they aren't
+    //     touching the parent repo's HEAD or working tree, so a merge here
+    //     can't corrupt their state
     const db = getDb();
-    const activeAgent = db.prepare(
-      "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') LIMIT 1"
-    ).get(repo);
+    const activeAgent = excludeAgentId
+      ? db.prepare(
+          "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') AND id != ? AND (worktree_path IS NULL OR worktree_path = ?) LIMIT 1"
+        ).get(repo, excludeAgentId, repo)
+      : db.prepare(
+          "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') AND (worktree_path IS NULL OR worktree_path = ?) LIMIT 1"
+        ).get(repo, repo);
     if (activeAgent) {
       return { success: false, message: `Cannot merge: an agent is still active in repo ${repo}` };
     }
@@ -279,6 +290,76 @@ export function mergeWorktreeBranch(
 
     gitSafe(repo, 'merge', '--abort');
     return { success: false, message: `Merge failed: ${msg}` };
+  }
+}
+
+/**
+ * Check whether an agent branch has been merged into the base branch by
+ * looking for the canonical merge commit (`Merge <branch> into <base>`) in
+ * the base branch's history. Used by /review to verify the resolver actually
+ * landed the merge — its `done` status alone isn't authoritative.
+ */
+export function isBranchMergedInto(repo: string, agentBranch: string, baseBranch: string): boolean {
+  if (!/^[\w\-\/\.]+$/.test(baseBranch)) return false;
+  if (!/^[\w\-\/\.]+$/.test(agentBranch)) return false;
+  const expectedMessage = `Merge ${agentBranch} into ${baseBranch}`;
+  const log = gitSafe(repo, 'log', baseBranch, '--merges', '--format=%s') || '';
+  return log.split('\n').some(line => line.includes(expectedMessage));
+}
+
+/**
+ * Revert a previously-merged agent branch by finding the merge commit (created
+ * with the canonical "Merge <branch> into <base>" message) and running
+ * `git revert -m 1`. Refuses if any agent is still active in the parent repo
+ * working tree, same way mergeWorktreeBranch does.
+ */
+export function revertMergedBranch(
+  repo: string,
+  agentBranch: string,
+  baseBranch = 'main',
+  excludeAgentId?: string,
+): { success: boolean; message: string; revertCommit?: string } {
+  try {
+    if (!/^[\w\-\/\.]+$/.test(baseBranch)) throw new Error('Invalid branch name');
+    if (!/^[\w\-\/\.]+$/.test(agentBranch)) throw new Error('Invalid branch name');
+
+    const db = getDb();
+    const activeAgent = excludeAgentId
+      ? db.prepare(
+          "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') AND id != ? AND (worktree_path IS NULL OR worktree_path = ?) LIMIT 1"
+        ).get(repo, excludeAgentId, repo)
+      : db.prepare(
+          "SELECT id FROM agents WHERE repo = ? AND status IN ('running', 'spawning') AND (worktree_path IS NULL OR worktree_path = ?) LIMIT 1"
+        ).get(repo, repo);
+    if (activeAgent) {
+      return { success: false, message: `Cannot revert: an agent is still active in repo ${repo}` };
+    }
+
+    // Find the merge commit by its canonical message (`Merge <branch> into <base>`).
+    const expectedMessage = `Merge ${agentBranch} into ${baseBranch}`;
+    const log = gitSafe(repo, 'log', baseBranch, '--merges', '--format=%H %s') || '';
+    const matchLine = log.split('\n').find(line => line.includes(expectedMessage));
+    if (!matchLine) {
+      return { success: false, message: `No merge commit found on ${baseBranch} for branch ${agentBranch}` };
+    }
+    const mergeCommit = matchLine.split(' ')[0];
+    if (!/^[0-9a-f]{40}$/i.test(mergeCommit)) {
+      return { success: false, message: `Bad merge commit hash: ${mergeCommit}` };
+    }
+
+    git(repo, 'checkout', baseBranch);
+    // -m 1 picks the first parent (the base branch) as the mainline so the
+    // agent's commits are inverted; --no-edit accepts the default revert message.
+    git(repo, 'revert', '-m', '1', '--no-edit', mergeCommit);
+    return {
+      success: true,
+      message: `Reverted ${agentBranch} (merge ${mergeCommit.slice(0, 7)}) from ${baseBranch}`,
+      revertCommit: mergeCommit,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    gitSafe(repo, 'revert', '--abort');
+    return { success: false, message: `Revert failed: ${msg}` };
   }
 }
 

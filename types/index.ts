@@ -1,6 +1,6 @@
-export type AgentType = 'claude' | 'codex' | 'opencode' | 'custom' | 'test';
-export type AgentStatus = 'spawning' | 'running' | 'idle' | 'done' | 'error' | 'killed';
-export type LogStream = 'stdout' | 'stderr' | 'system';
+export type AgentType = 'claude' | 'codex' | 'opencode' | 'hermes' | 'custom' | 'test';
+export type AgentStatus = 'spawning' | 'running' | 'idle' | 'needs_input' | 'done' | 'error' | 'killed';
+export type LogStream = 'stdout' | 'stderr' | 'system' | 'agent_text' | 'tool_use' | 'tool_result';
 export type TaskStatus = 'pending' | 'assigned' | 'done';
 
 export interface Agent {
@@ -14,6 +14,7 @@ export interface Agent {
   pid: number | null;
   port: number | null;
   depends_on?: string | null;
+  project_id?: string | null;
   created_at: number;
   updated_at: number;
   last_log?: string | null;
