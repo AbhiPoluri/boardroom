@@ -54,6 +54,21 @@ const ENV_PREAMBLE_NO_REPO = `\n\nWorking environment: you are spawned in an emp
 
 const ENV_PREAMBLE_WITH_REPO = `\n\nWorking environment: your project's codebase is checked out at your current working directory (each persona gets an isolated git worktree branch). Use Bash/Read/Glob/Grep freely to inspect the code. If the task asks you to modify code, you can edit files directly — the spawner auto-commits any changes you leave behind. Don't make speculative changes outside the explicit scope of the task.`;
 
+// Real incident: a persona's hermes session hit a port conflict when trying
+// to start a dev server, escalated to `pkill -9 node`, and murdered the
+// boardroom server itself (also a node process) — taking the entire
+// orchestrator down with it. These rails are non-negotiable: every persona
+// gets them.
+const SAFETY_RAILS = `\n\nSafety rails — these are hard constraints, not suggestions:
+
+- NEVER kill processes by name pattern. Banned: \`pkill\`, \`killall\`, \`pkill -f node\`, \`lsof -ti:<port> | xargs kill\`, or any variant that matches by command name, port, or fuzzy match. You will accidentally kill the boardroom orchestrator (also node) and tear down the whole system.
+- If you need to free a port, find the specific PID with \`lsof -ti:<port>\` and \`kill <pid>\` ONLY if it's a child you spawned. If you didn't spawn it, leave it alone and pick a different port.
+- NEVER run \`rm -rf\` on \`~\`, \`/\`, \`/tmp\` directly, or anywhere outside your current working directory.
+- NEVER run \`git push --force\`, \`git reset --hard origin/<branch>\`, \`git checkout -- .\`, or \`git clean -fd\`. The spawner auto-commits your work; trust it.
+- NEVER \`npm install -g\`, \`brew install\`, or other system-level package mutations.
+- NEVER modify files outside your worktree (your CWD). \`~/.boardroom/\`, \`/Users/\`, \`/etc/\`, etc. are off-limits.
+- If a tool fails or a port is taken, stop and report the failure in your response. Don't escalate to broad-stroke fixes.`;
+
 const HANDOFF_PROTOCOL = `\n\nTeam handoff protocol — when (and only when) a teammate is *clearly better suited* for a piece of the work, you can hand off:
 
 - Do your own task first if you can do it well. Don't reflexively delegate work that's within your skill set.
@@ -97,7 +112,7 @@ function buildPersonaPrompt(persona: Persona, task: string, hasRepo: boolean): s
   if (team) sysParts.push(team);
   const prelude = sysParts.join('\n\n');
   const envPreamble = hasRepo ? ENV_PREAMBLE_WITH_REPO : ENV_PREAMBLE_NO_REPO;
-  return `${prelude}\n\n---\n\n# Task\n\n${task}${ASK_USER_PREAMBLE}${HANDOFF_PROTOCOL}${envPreamble}`;
+  return `${prelude}\n\n---\n\n# Task\n\n${task}${SAFETY_RAILS}${ASK_USER_PREAMBLE}${HANDOFF_PROTOCOL}${envPreamble}`;
 }
 
 export interface WakePersonaOptions {

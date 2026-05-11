@@ -38,7 +38,7 @@ export async function register() {
     // starts so its first persona sync sees the corrected status.
     // Prune + prompt-refresh have no ordering constraint, so run them in
     // parallel with the reaper to cut boot latency.
-    const PROMPT_REFRESH_VERSION = '3';
+    const PROMPT_REFRESH_VERSION = '4';
 
     await Promise.allSettled([
       (async () => {
